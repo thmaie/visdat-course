@@ -267,6 +267,208 @@ for i, value in enumerate(data):
     print(f"  Processing value {value}")
 ```
 
+## Virtual Environments
+
+### Why Virtual Environments?
+
+Virtual environments are isolated Python environments that allow you to:
+- **Avoid conflicts** between package versions for different projects
+- **Keep your system Python clean** and stable
+- **Share exact dependencies** with team members
+- **Test different Python versions** for the same project
+
+> **📽️ Quick Reference:** See Lecture 1 Slides for basic commands.
+
+### Creating and Using Virtual Environments
+
+#### Step 1: Create a Virtual Environment
+
+```bash
+# Navigate to your project directory
+cd my-project
+
+# Create virtual environment
+python -m venv .venv
+
+# Alternative: specify Python version (if multiple installed)
+python3.9 -m venv .venv
+```
+
+#### Step 2: Activate the Virtual Environment
+
+**Windows:**
+```cmd
+# Command Prompt
+.venv\Scripts\activate
+
+# PowerShell
+.venv\Scripts\Activate.ps1
+```
+
+**macOS/Linux:**
+```bash
+source .venv/bin/activate
+```
+
+**You'll see the environment name in your prompt:**
+```bash
+(.venv) user@computer:~/my-project$
+```
+
+#### Step 3: Install Packages
+
+```bash
+# With virtual environment activated
+pip install numpy pandas matplotlib
+
+# Install specific versions
+pip install numpy==1.21.0
+
+# Install from requirements file
+pip install -r requirements.txt
+```
+
+#### Step 4: Deactivate When Done
+
+```bash
+deactivate
+```
+
+### VS Code Integration
+
+VS Code automatically detects virtual environments:
+
+1. **Open project folder** in VS Code
+2. **Python interpreter selection:**
+   - `Ctrl+Shift+P` → "Python: Select Interpreter"
+   - Choose `.venv/Scripts/python.exe` (Windows) or `.venv/bin/python` (macOS/Linux)
+3. **Terminal integration:** New terminals automatically activate the environment
+
+### Managing Dependencies
+
+#### Create requirements.txt
+
+```bash
+# Generate requirements file
+pip freeze > requirements.txt
+```
+
+**Example requirements.txt:**
+```
+numpy==1.21.6
+pandas==1.4.2
+matplotlib==3.5.2
+plotly==5.8.0
+pyvista==0.35.2
+```
+
+#### Install from requirements.txt
+
+```bash
+# In new environment
+pip install -r requirements.txt
+```
+
+### Common Workflows
+
+#### New Project Setup
+
+```bash
+# 1. Create project directory
+mkdir my-data-project
+cd my-data-project
+
+# 2. Create virtual environment
+python -m venv .venv
+
+# 3. Activate environment
+.venv\Scripts\activate  # Windows
+# source .venv/bin/activate  # macOS/Linux
+
+# 4. Install dependencies
+pip install numpy pandas matplotlib jupyter
+
+# 5. Create requirements file
+pip freeze > requirements.txt
+
+# 6. Start coding!
+```
+
+#### Sharing Project with Team
+
+```bash
+# Include in your Git repository:
+# ✅ requirements.txt
+# ❌ .venv/ (add to .gitignore)
+
+# Team member setup:
+git clone your-repo
+cd your-repo
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+pip install -r requirements.txt
+```
+
+### Best Practices
+
+1. **One environment per project**
+2. **Always activate before installing packages**
+3. **Use descriptive names** for complex setups:
+   ```bash
+   python -m venv venv-data-analysis
+   ```
+4. **Keep requirements.txt updated**
+5. **Add .venv/ to .gitignore**
+
+### Troubleshooting
+
+#### Environment Not Activating
+```bash
+# Windows: Try different activation scripts
+.venv\Scripts\activate.bat
+.venv\Scripts\activate.ps1
+.venv\Scripts\Activate.ps1
+
+# Check PowerShell execution policy
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+#### Wrong Python Version
+```bash
+# Check current Python
+python --version
+
+# Create with specific Python
+python3.9 -m venv .venv
+```
+
+#### Package Installation Fails
+```bash
+# Upgrade pip first
+python -m pip install --upgrade pip
+
+# Then install packages
+pip install package-name
+```
+
+### Alternative: Conda Environments
+
+For data science projects, Conda is also popular:
+
+```bash
+# Create conda environment
+conda create -n myenv python=3.9
+
+# Activate
+conda activate myenv
+
+# Install packages
+conda install numpy pandas matplotlib
+
+# Deactivate
+conda deactivate
+```
+
 ## Functions
 
 ### Basic Functions
