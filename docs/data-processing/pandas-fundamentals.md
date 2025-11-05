@@ -65,67 +65,80 @@ print(f"Speed range: {telemetry['speed_kmh'].min()}-{telemetry['speed_kmh'].max(
 
 ### Additional Data Loading Examples
 ```python
-# Alternative data loading examples
-df = pd.read_csv('sensor_data.csv')
-df_excel = pd.read_excel('measurements.xlsx', sheet_name='Sheet1')
-df_json = pd.read_json('telemetry.json')
+# Using the course dataset files
+sessions = pd.read_csv('data/racing_sessions.csv')
+laps = pd.read_csv('data/lap_times.csv') 
+telemetry = pd.read_csv('data/telemetry_detailed.csv')
 
-# Basic information
-print(f"Dataset shape: {df.shape}")
-print(f"Columns: {df.columns.tolist()}")
-print(f"Data types:\n{df.dtypes}")
+# Excel format (multi-sheet)
+excel_data = pd.read_excel('data/nova_paka_racing_data.xlsx', sheet_name='Sessions')
+all_sheets = pd.read_excel('data/nova_paka_racing_data.xlsx', sheet_name=None)
+
+# Basic information about the session data
+print(f"Dataset shape: {sessions.shape}")
+print(f"Columns: {sessions.columns.tolist()}")
+print(f"Data types:\n{sessions.dtypes}")
 
 # Statistical summary
-print(df.describe())
+print(sessions.describe())
 
 # Missing values
-print(f"Missing values:\n{df.isnull().sum()}")
+print(f"Missing values:\n{sessions.isnull().sum()}")
 
 # First and last rows
 print("First 5 rows:")
-print(df.head())
+print(sessions.head())
 print("Last 5 rows:")
-print(df.tail())
+print(sessions.tail())
 ```
 
 ### Data Selection and Filtering
 ```python
+# Using the telemetry dataset for examples
+telemetry = pd.read_csv('data/telemetry_detailed.csv')
+
 # Column selection
-speed_data = df['speed']
-acceleration_data = df[['ax', 'ay', 'az']]
+speed_data = telemetry['speed_kmh']
+position_data = telemetry[['distance_m', 'time_s']]
 
 # Row selection by index
-first_1000_samples = df.iloc[:1000]
-specific_rows = df.iloc[100:200]
+first_100_samples = telemetry.iloc[:100]
+specific_rows = telemetry.iloc[100:200]
 
 # Boolean indexing (filtering)
-high_speed = df[df['speed'] > 100]
-cornering = df[df['steering_angle'].abs() > 10]
+high_speed = telemetry[telemetry['speed_kmh'] > 35]
+heavy_braking = telemetry[telemetry['brake_pressure_bar'] > 50]
 
 # Multiple conditions
-fast_cornering = df[(df['speed'] > 80) & (df['steering_angle'].abs() > 15)]
+fast_braking = telemetry[(telemetry['speed_kmh'] > 30) & (telemetry['brake_pressure_bar'] > 40)]
 
 # Query method (alternative syntax)
-cornering_alt = df.query('abs(steering_angle) > 10')
+high_rpm = telemetry.query('rpm > 7000')
 ```
 
 ### Data Modification
 ```python
-# Add new columns
-df['speed_ms'] = df['speed'] / 3.6  # Convert km/h to m/s
-df['lateral_g'] = df['ay'] / 9.81   # Convert to g-forces
+# Using telemetry data for transformations
+telemetry = pd.read_csv('data/telemetry_detailed.csv')
+
+# Add new columns (using telemetry data)
+telemetry['speed_ms'] = telemetry['speed_kmh'] / 3.6  # Convert km/h to m/s
+telemetry['total_g'] = (telemetry['lateral_g']**2 + telemetry['longitudinal_g']**2)**0.5
 
 # Modify existing columns
-df['timestamp'] = df['timestamp'] - df['timestamp'].iloc[0]  # Zero-start time
+telemetry['time_minutes'] = telemetry['time_s'] / 60
 
-# Drop columns
-df_reduced = df.drop(['unused_column1', 'unused_column2'], axis=1)
+# Zero-start time (relative to first timestamp)
+telemetry['time_relative'] = telemetry['time_s'] - telemetry['time_s'].iloc[0]
 
-# Rename columns
-df_renamed = df.rename(columns={
-    'ax': 'acceleration_x',
-    'ay': 'acceleration_y',
-    'az': 'acceleration_z'
+# Drop columns (example with hypothetical unused columns)
+# telemetry_reduced = telemetry.drop(['unused_column1', 'unused_column2'], axis=1)
+
+# Rename columns (example with existing columns)
+telemetry_renamed = telemetry.rename(columns={
+    'speed_kmh': 'velocity_kmh',
+    'time_s': 'timestamp_seconds',
+    'distance_m': 'position_meters'
 })
 ```
 
@@ -133,36 +146,42 @@ df_renamed = df.rename(columns={
 
 ### Handling Missing Values
 ```python
+# Using telemetry data for missing value examples
+telemetry = pd.read_csv('data/telemetry_detailed.csv')
+
 # Check for missing values
-missing_summary = df.isnull().sum()
+missing_summary = telemetry.isnull().sum()
 print("Missing values per column:")
 print(missing_summary[missing_summary > 0])
 
 # Strategy 1: Drop rows with any missing values
-df_dropna = df.dropna()
+telemetry_dropna = telemetry.dropna()
 
 # Strategy 2: Drop rows with too many missing values
-threshold = len(df.columns) * 0.7  # Keep rows with at least 70% data
-df_threshold = df.dropna(thresh=threshold)
+threshold = len(telemetry.columns) * 0.7  # Keep rows with at least 70% data
+telemetry_threshold = telemetry.dropna(thresh=threshold)
 
 # Strategy 3: Forward fill for short gaps
-df_ffill = df.fillna(method='ffill', limit=5)
+telemetry_ffill = telemetry.fillna(method='ffill', limit=5)
 
 # Strategy 4: Linear interpolation for sensor data
-df_interpolated = df.copy()
-df_interpolated['ax'] = df_interpolated['ax'].interpolate(method='linear')
-df_interpolated['ay'] = df_interpolated['ay'].interpolate(method='linear')
+telemetry_interpolated = telemetry.copy()
+telemetry_interpolated['speed_kmh'] = telemetry_interpolated['speed_kmh'].interpolate(method='linear')
+telemetry_interpolated['rpm'] = telemetry_interpolated['rpm'].interpolate(method='linear')
 
 # Strategy 5: Fill with specific values
-df_filled = df.fillna({
-    'speed': 0,
-    'steering_angle': 0,
-    'ax': df['ax'].mean()
+telemetry_filled = telemetry.fillna({
+    'speed_kmh': 0,
+    'steering_angle_deg': 0,
+    'throttle_percent': telemetry['throttle_percent'].mean()
 })
 ```
 
 ### Outlier Detection and Removal
 ```python
+# Using telemetry data for transformations
+telemetry = pd.read_csv('data/telemetry_detailed.csv')
+
 def detect_outliers_iqr(data, column):
     """Detect outliers using Interquartile Range method"""
     Q1 = data[column].quantile(0.25)
@@ -175,64 +194,71 @@ def detect_outliers_iqr(data, column):
                    (data[column] > upper_bound)]
     return outliers, lower_bound, upper_bound
 
-# Detect outliers
-outliers, lower, upper = detect_outliers_iqr(df, 'ax')
-print(f"Found {len(outliers)} outliers in ax")
-print(f"Valid range: [{lower:.3f}, {upper:.3f}] m/s²")
+# Detect outliers using telemetry data
+telemetry = pd.read_csv('data/telemetry_detailed.csv')
+outliers, lower, upper = detect_outliers_iqr(telemetry, 'lateral_g')
+print(f"Found {len(outliers)} outliers in lateral_g")
+print(f"Valid range: [{lower:.3f}, {upper:.3f}] g")
 
 # Remove outliers
 def remove_outliers_iqr(data, columns):
     """Remove outliers from specified columns using IQR method"""
-    df_clean = data.copy()
+    telemetry_clean = data.copy()
     
     for column in columns:
-        Q1 = df_clean[column].quantile(0.25)
-        Q3 = df_clean[column].quantile(0.75)
+        Q1 = telemetry_clean[column].quantile(0.25)
+        Q3 = telemetry_clean[column].quantile(0.75)
         IQR = Q3 - Q1
         lower = Q1 - 1.5 * IQR
         upper = Q3 + 1.5 * IQR
         
         # Keep only values within bounds
-        mask = (df_clean[column] >= lower) & (df_clean[column] <= upper)
-        df_clean = df_clean[mask]
+        mask = (telemetry_clean[column] >= lower) & (telemetry_clean[column] <= upper)
+        telemetry_clean = telemetry_clean[mask]
     
-    return df_clean
+    return telemetry_clean
 
-# Apply to acceleration channels
-acceleration_columns = ['ax', 'ay', 'az']
-df_clean = remove_outliers_iqr(df, acceleration_columns)
-print(f"Removed {len(df) - len(df_clean)} outlier samples")
+# Apply to g-force channels
+gforce_columns = ['lateral_g', 'longitudinal_g']
+telemetry_clean = remove_outliers_iqr(telemetry, gforce_columns)
+print(f"Removed {len(telemetry) - len(telemetry_clean)} outlier samples")
 ```
 
 ## Basic Statistical Operations
 
 ### Descriptive Statistics
 ```python
+# Using telemetry data for statistical examples
+telemetry = pd.read_csv('data/telemetry_detailed.csv')
+
 # Single column statistics
-print(f"Speed - Mean: {df['speed'].mean():.2f} km/h")
-print(f"Speed - Median: {df['speed'].median():.2f} km/h")
-print(f"Speed - Std: {df['speed'].std():.2f} km/h")
-print(f"Speed - Min/Max: {df['speed'].min():.1f} / {df['speed'].max():.1f} km/h")
+print(f"Speed - Mean: {telemetry['speed_kmh'].mean():.2f} km/h")
+print(f"Speed - Median: {telemetry['speed_kmh'].median():.2f} km/h")
+print(f"Speed - Std: {telemetry['speed_kmh'].std():.2f} km/h")
+print(f"Speed - Min/Max: {telemetry['speed_kmh'].min():.1f} / {telemetry['speed_kmh'].max():.1f} km/h")
 
 # Multiple columns
-stats_summary = df[['speed', 'ax', 'ay', 'az']].describe()
+stats_summary = telemetry[['speed_kmh', 'lateral_g', 'longitudinal_g', 'rpm']].describe()
 print(stats_summary)
 
 # Custom percentiles
-percentiles = df['speed'].quantile([0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99])
+percentiles = telemetry['speed_kmh'].quantile([0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99])
 print("Speed percentiles:")
 print(percentiles)
 ```
 
 ### Correlation Analysis
 ```python
-# Correlation matrix
-correlation_matrix = df[['speed', 'ax', 'ay', 'steering_angle']].corr()
+# Using telemetry data for transformations
+telemetry = pd.read_csv('data/telemetry_detailed.csv')
+
+# Correlation matrix using telemetry data
+correlation_matrix = telemetry[['speed_kmh', 'lateral_g', 'longitudinal_g', 'steering_angle_deg']].corr()
 print("Correlation matrix:")
 print(correlation_matrix)
 
 # Specific correlations
-speed_steering_corr = df['speed'].corr(df['steering_angle'])
+speed_steering_corr = telemetry['speed_kmh'].corr(telemetry['steering_angle_deg'])
 print(f"Speed-Steering correlation: {speed_steering_corr:.3f}")
 ```
 
@@ -240,90 +266,94 @@ print(f"Speed-Steering correlation: {speed_steering_corr:.3f}")
 
 ### Mathematical Operations
 ```python
+# Using telemetry data for transformations
+telemetry = pd.read_csv('data/telemetry_detailed.csv')
+
 # Element-wise operations
-df['speed_squared'] = df['speed'] ** 2
-df['acceleration_magnitude'] = np.sqrt(df['ax']**2 + df['ay']**2 + df['az']**2)
+telemetry['speed_squared'] = telemetry['speed_kmh'] ** 2
+telemetry['g_force_magnitude'] = np.sqrt(telemetry['lateral_g']**2 + telemetry['longitudinal_g']**2)
 
 # Trigonometric functions
-df['steering_rad'] = np.radians(df['steering_angle'])
-df['steering_sin'] = np.sin(df['steering_rad'])
+telemetry['steering_rad'] = np.radians(telemetry['steering_angle_deg'])
+telemetry['steering_sin'] = np.sin(telemetry['steering_rad'])
 
 # Logarithmic transformations
-df['speed_log'] = np.log1p(df['speed'])  # log(1+x) to handle zeros
+telemetry['speed_log'] = np.log1p(telemetry['speed_kmh'])  # log(1+x) to handle zeros
 
 # Normalization
-df['speed_normalized'] = (df['speed'] - df['speed'].mean()) / df['speed'].std()
+telemetry['speed_normalized'] = (telemetry['speed_kmh'] - telemetry['speed_kmh'].mean()) / telemetry['speed_kmh'].std()
 
 # Min-max scaling
-df['speed_scaled'] = (df['speed'] - df['speed'].min()) / (df['speed'].max() - df['speed'].min())
+telemetry['speed_scaled'] = (telemetry['speed_kmh'] - telemetry['speed_kmh'].min()) / (telemetry['speed_kmh'].max() - telemetry['speed_kmh'].min())
 ```
 
 ### Binning and Categorization
 ```python
-# Create speed categories
+# Using telemetry data for transformations
+telemetry = pd.read_csv('data/telemetry_detailed.csv')
+
+# Create speed categories using telemetry data
 speed_bins = [0, 30, 60, 100, 150, 300]
 speed_labels = ['Very Low', 'Low', 'Medium', 'High', 'Very High']
-df['speed_category'] = pd.cut(df['speed'], bins=speed_bins, labels=speed_labels)
+telemetry['speed_category'] = pd.cut(telemetry['speed_kmh'], bins=speed_bins, labels=speed_labels)
 
 # Equal-width binning
-df['ax_quartiles'] = pd.qcut(df['ax'], q=4, labels=['Q1', 'Q2', 'Q3', 'Q4'])
+telemetry['lateral_g_quartiles'] = pd.qcut(telemetry['lateral_g'], q=4, labels=['Q1', 'Q2', 'Q3', 'Q4'])
 
 # Custom conditions
 conditions = [
-    (df['speed'] < 50),
-    (df['speed'] >= 50) & (df['speed'] < 100),
-    (df['speed'] >= 100)
+    (telemetry['speed_kmh'] < 50),
+    (telemetry['speed_kmh'] >= 50) & (telemetry['speed_kmh'] < 100),
+    (telemetry['speed_kmh'] >= 100)
 ]
 choices = ['City', 'Highway', 'Racing']
-df['driving_mode'] = np.select(conditions, choices, default='Unknown')
+telemetry['driving_mode'] = np.select(conditions, choices, default='Unknown')
 ```
 
 ## File I/O Operations
 
 ### Reading Data
 ```python
-# CSV with custom parameters
-df = pd.read_csv('data.csv', 
-                sep=';',           # Different separator
-                decimal=',',       # European decimal format
-                encoding='utf-8',  # Character encoding
-                skiprows=2,        # Skip header rows
-                nrows=10000,       # Read only first 10k rows
-                usecols=['timestamp', 'speed', 'ax', 'ay'],  # Specific columns
-                dtype={'speed': 'float32'},  # Specify data types
-                parse_dates=['timestamp'])   # Parse dates
+# CSV with custom parameters (using course dataset)
+telemetry = pd.read_csv('data/telemetry_detailed.csv')
 
-# Excel with multiple sheets
-df_sheet1 = pd.read_excel('data.xlsx', sheet_name='Telemetry')
-df_all_sheets = pd.read_excel('data.xlsx', sheet_name=None)  # All sheets
+# Excel with multiple sheets (using course dataset)
+sessions_excel = pd.read_excel('data/nova_paka_racing_data.xlsx', sheet_name='Sessions')
+all_sheets = pd.read_excel('data/nova_paka_racing_data.xlsx', sheet_name=None)  # All sheets
 
-# JSON
-df_json = pd.read_json('telemetry.json', orient='records')
+# Example with custom CSV parameters (hypothetical)
+# df = pd.read_csv('custom_data.csv', 
+#                 sep=';',           # Different separator
+#                 decimal=',',       # European decimal format
+#                 encoding='utf-8',  # Character encoding
+#                 skiprows=2,        # Skip header rows
+#                 nrows=10000,       # Read only first 10k rows
+#                 usecols=['timestamp', 'speed', 'ax', 'ay'],  # Specific columns
+#                 dtype={'speed': 'float32'},  # Specify data types
+#                 parse_dates=['timestamp'])   # Parse dates
 ```
 
 ### Writing Data
 ```python
-# CSV export
-df.to_csv('processed_data.csv', 
+# CSV export (using telemetry data)
+telemetry.to_csv('processed_data.csv', 
           index=False,           # Don't save index
           float_format='%.6f',   # Control decimal places
           sep=';',               # Custom separator
           encoding='utf-8')      # Character encoding
 
 # Excel export
-df.to_excel('analysis_results.xlsx', 
+telemetry.to_excel('analysis_results.xlsx', 
            sheet_name='Processed_Data',
            index=False,
            float_format='%.3f')
 
 # Multiple sheets
 with pd.ExcelWriter('race_analysis.xlsx') as writer:
-    df.to_excel(writer, sheet_name='Raw_Data', index=False)
-    df_clean.to_excel(writer, sheet_name='Cleaned_Data', index=False)
-    summary_stats.to_excel(writer, sheet_name='Summary', index=False)
+    telemetry.to_excel(writer, sheet_name='Raw_Data', index=False)
 
 # JSON export
-df.to_json('telemetry_export.json', 
+telemetry.to_json('telemetry_export.json', 
           orient='records',      # Array of objects
           date_format='iso',     # ISO date format
           indent=2)              # Pretty formatting
@@ -333,60 +363,64 @@ df.to_json('telemetry_export.json',
 
 ### Memory Optimization
 ```python
-# Check memory usage
-print(f"Memory usage: {df.memory_usage(deep=True).sum() / 1e6:.1f} MB")
+# Check memory usage (using telemetry data)
+telemetry = pd.read_csv('data/telemetry_detailed.csv')
+print(f"Memory usage: {telemetry.memory_usage(deep=True).sum() / 1e6:.1f} MB")
 
 # Optimize data types
-def optimize_dtypes(df):
+def optimize_dtypes(telemetry_data):
     """Optimize DataFrame memory usage"""
-    original_size = df.memory_usage(deep=True).sum()
+    original_size = telemetry_data.memory_usage(deep=True).sum()
     
     # Optimize float columns
-    for col in df.select_dtypes(include=['float64']):
-        col_min = df[col].min()
-        col_max = df[col].max()
+    for col in telemetry_data.select_dtypes(include=['float64']):
+        col_min = telemetry_data[col].min()
+        col_max = telemetry_data[col].max()
         
         if col_min > np.finfo(np.float32).min and col_max < np.finfo(np.float32).max:
-            df[col] = pd.to_numeric(df[col], downcast='float')
+            telemetry_data[col] = pd.to_numeric(telemetry_data[col], downcast='float')
     
     # Optimize integer columns
-    for col in df.select_dtypes(include=['int64']):
-        col_min = df[col].min()
-        col_max = df[col].max()
+    for col in telemetry_data.select_dtypes(include=['int64']):
+        col_min = telemetry_data[col].min()
+        col_max = telemetry_data[col].max()
         
         if col_min > np.iinfo(np.int32).min and col_max < np.iinfo(np.int32).max:
-            df[col] = pd.to_numeric(df[col], downcast='integer')
+            telemetry_data[col] = pd.to_numeric(telemetry_data[col], downcast='integer')
     
-    optimized_size = df.memory_usage(deep=True).sum()
+    optimized_size = telemetry_data.memory_usage(deep=True).sum()
     print(f"Memory reduced from {original_size/1e6:.1f} MB to {optimized_size/1e6:.1f} MB")
     print(f"Reduction factor: {original_size/optimized_size:.1f}x")
     
-    return df
+    return telemetry_data
 
-df_optimized = optimize_dtypes(df.copy())
+telemetry_optimized = optimize_dtypes(telemetry.copy())
 ```
 
 ### Vectorized Operations
 ```python
+# Using telemetry data for vectorized operations
+telemetry = pd.read_csv('data/telemetry_detailed.csv')
+
 # Avoid loops - use vectorized operations
 # BAD: Loop through rows
 results = []
-for index, row in df.iterrows():
-    result = row['ax'] * row['speed'] / 3.6
+for index, row in telemetry.iterrows():
+    result = row['lateral_g'] * row['speed_kmh'] / 3.6
     results.append(result)
-df['bad_calculation'] = results
+telemetry['bad_calculation'] = results
 
 # GOOD: Vectorized operation
-df['good_calculation'] = df['ax'] * df['speed'] / 3.6
+telemetry['good_calculation'] = telemetry['lateral_g'] * telemetry['speed_kmh'] / 3.6
 
 # Use .apply() for complex operations
 def complex_calculation(row):
-    return np.sqrt(row['ax']**2 + row['ay']**2) * row['speed']
+    return np.sqrt(row['lateral_g']**2 + row['longitudinal_g']**2) * row['speed_kmh']
 
-df['complex_result'] = df.apply(complex_calculation, axis=1)
+telemetry['complex_result'] = telemetry.apply(complex_calculation, axis=1)
 
 # Even better: Pure vectorized
-df['complex_result_vectorized'] = np.sqrt(df['ax']**2 + df['ay']**2) * df['speed']
+telemetry['complex_result_vectorized'] = np.sqrt(telemetry['lateral_g']**2 + telemetry['longitudinal_g']**2) * telemetry['speed_kmh']
 ```
 
 ## Best Practices
@@ -396,41 +430,41 @@ df['complex_result_vectorized'] = np.sqrt(df['ax']**2 + df['ay']**2) * df['speed
 # Create reusable functions
 def load_telemetry_data(filename):
     """Load and basic preprocessing of telemetry data"""
-    df = pd.read_csv(filename)
+    telemetry_data = pd.read_csv(filename)
     
     # Basic validation
-    required_columns = ['timestamp', 'speed', 'ax', 'ay', 'az']
-    missing_columns = set(required_columns) - set(df.columns)
+    required_columns = ['time_s', 'speed_kmh', 'lateral_g', 'longitudinal_g', 'rpm']
+    missing_columns = set(required_columns) - set(telemetry_data.columns)
     if missing_columns:
         raise ValueError(f"Missing required columns: {missing_columns}")
     
     # Sort by timestamp
-    df = df.sort_values('timestamp').reset_index(drop=True)
+    telemetry_data = telemetry_data.sort_values('time_s').reset_index(drop=True)
     
-    return df
+    return telemetry_data
 
-def validate_sensor_data(df):
+def validate_sensor_data(telemetry_data):
     """Validate sensor data ranges"""
     validation_rules = {
-        'speed': (0, 350),      # km/h
-        'ax': (-20, 20),        # m/s²
-        'ay': (-20, 20),        # m/s²
-        'az': (-20, 20),        # m/s²
-        'steering_angle': (-720, 720)  # degrees
+        'speed_kmh': (0, 350),           # km/h
+        'lateral_g': (-3, 3),            # g-force
+        'longitudinal_g': (-3, 3),       # g-force
+        'rpm': (0, 10000),               # engine RPM
+        'steering_angle_deg': (-720, 720)  # degrees
     }
     
     issues = []
     for column, (min_val, max_val) in validation_rules.items():
-        if column in df.columns:
-            out_of_range = df[(df[column] < min_val) | (df[column] > max_val)]
+        if column in telemetry_data.columns:
+            out_of_range = telemetry_data[(telemetry_data[column] < min_val) | (telemetry_data[column] > max_val)]
             if len(out_of_range) > 0:
                 issues.append(f"{column}: {len(out_of_range)} values out of range [{min_val}, {max_val}]")
     
     return issues
 
 # Use the functions
-df = load_telemetry_data('race_data.csv')
-validation_issues = validate_sensor_data(df)
+telemetry = load_telemetry_data('data/telemetry_detailed.csv')
+validation_issues = validate_sensor_data(telemetry)
 if validation_issues:
     print("Data validation issues:")
     for issue in validation_issues:
@@ -439,9 +473,12 @@ if validation_issues:
 
 ### Documentation and Metadata
 ```python
-# Document your data processing steps
+# Document your data processing steps (using telemetry data)
+telemetry_raw = pd.read_csv('data/telemetry_detailed.csv')
+telemetry_processed = telemetry_raw.copy()  # After processing steps
+
 processing_log = {
-    'source_file': 'raw_telemetry.csv',
+    'source_file': 'data/telemetry_detailed.csv',
     'processing_date': pd.Timestamp.now().isoformat(),
     'steps': [
         'loaded_raw_data',
@@ -451,9 +488,9 @@ processing_log = {
         'calculated_derived_parameters'
     ],
     'data_quality': {
-        'original_samples': len(df_raw),
-        'final_samples': len(df_processed),
-        'retention_rate': len(df_processed) / len(df_raw)
+        'original_samples': len(telemetry_raw),
+        'final_samples': len(telemetry_processed),
+        'retention_rate': len(telemetry_processed) / len(telemetry_raw)
     }
 }
 

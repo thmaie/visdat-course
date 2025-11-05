@@ -23,21 +23,23 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Dataset columns
+# Dataset columns (Nova Paka telemetry data)
 columns = [
-    'timestamp',      # Time in seconds from start
-    'ax', 'ay', 'az',  # Linear acceleration [m/s²] in vehicle frame
-    'gx', 'gy', 'gz',  # Angular velocity [rad/s] around vehicle axes
-    'speed',          # Vehicle speed [km/h]
-    'steering_angle', # Steering wheel angle [degrees]
-    'throttle',       # Throttle position [0-100%]
-    'brake_pressure', # Brake pressure [bar]
-    'distance'        # Cumulative distance [m]
+    'time_s',            # Time in seconds from start
+    'speed_kmh',         # Vehicle speed [km/h]
+    'lateral_g',         # Lateral acceleration [g] (positive = right turn)
+    'longitudinal_g',    # Longitudinal acceleration [g] (positive = acceleration)
+    'steering_angle_deg', # Steering wheel angle [degrees]
+    'throttle_percent',  # Throttle position [0-100%]
+    'brake_pressure_bar', # Brake pressure [bar]
+    'distance_m',        # Cumulative distance [m]
+    'rpm',               # Engine RPM
+    'gear'               # Current gear
 ]
 
 # Load the dataset
-df = pd.read_csv('racing_corner_maneuver.csv')
-print(f"Dataset: {df.shape[0]} samples over {df['timestamp'].max():.1f} seconds")
+df = pd.read_csv('data/telemetry_detailed.csv')
+print(f"Dataset: {df.shape[0]} samples over {df['time_s'].max():.1f} seconds")
 print(f"Columns: {list(df.columns)}")
 ```
 
@@ -48,8 +50,8 @@ print(f"Columns: {list(df.columns)}")
 # Basic information
 print("=== Dataset Overview ===")
 print(f"Shape: {df.shape}")
-print(f"Time range: {df['timestamp'].min():.3f} - {df['timestamp'].max():.3f} seconds")
-print(f"Sample rate: {1/df['timestamp'].diff().mean():.0f} Hz")
+print(f"Time range: {df['time_s'].min():.3f} - {df['time_s'].max():.3f} seconds")
+print(f"Sample rate: {1/df['time_s'].diff().mean():.0f} Hz")
 
 # Statistical summary
 print("\n=== Statistical Summary ===")
@@ -68,7 +70,7 @@ print(f"Duplicate rows: {duplicates}")
 ### Time Series Validation
 ```python
 # Check sampling consistency
-time_diffs = df['timestamp'].diff()
+time_diffs = df['time_s'].diff()
 mean_dt = time_diffs.mean()
 std_dt = time_diffs.std()
 
@@ -84,7 +86,7 @@ if len(large_gaps) > 0:
 # Visualize timing consistency
 plt.figure(figsize=(12, 4))
 plt.subplot(1, 2, 1)
-plt.plot(df['timestamp'], time_diffs * 1000)
+plt.plot(df['time_s'], time_diffs * 1000)
 plt.ylabel('Sample Interval [ms]')
 plt.xlabel('Time [s]')
 plt.title('Sampling Interval Over Time')
@@ -101,19 +103,18 @@ plt.show()
 ### Physical Validation
 ```python
 def validate_sensor_ranges(df):
-    """Validate sensor readings against physical limits"""
+    """Validate sensor readings against physical limits for autocross racing"""
     
     validation_rules = {
-        'speed': (0, 200, 'km/h'),
-        'ax': (-30, 30, 'm/s²'),
-        'ay': (-30, 30, 'm/s²'),
-        'az': (-30, 30, 'm/s²'),
-        'gx': (-10, 10, 'rad/s'),
-        'gy': (-10, 10, 'rad/s'),
-        'gz': (-10, 10, 'rad/s'),
-        'steering_angle': (-720, 720, 'degrees'),
-        'throttle': (0, 100, '%'),
-        'brake_pressure': (0, 200, 'bar')
+        'speed_kmh': (0, 60, 'km/h'),  # Autocross typical max speed
+        'lateral_g': (-2.0, 2.0, 'g'),  # Lateral acceleration limits
+        'longitudinal_g': (-1.5, 1.0, 'g'),  # Braking/acceleration limits
+        'steering_angle_deg': (-720, 720, 'degrees'),  # Steering wheel range
+        'throttle_percent': (0, 100, '%'),  # Throttle position
+        'brake_pressure_bar': (0, 80, 'bar'),  # Brake pressure for Formula Student
+        'rpm': (800, 12000, 'rpm'),  # Engine RPM range
+        'gear': (1, 6, ''),  # Gear numbers
+        'distance_m': (0, 1000, 'm')  # Distance on autocross course
     }
     
     validation_results = {}
@@ -159,7 +160,7 @@ def detect_outliers_iqr(data, column, factor=1.5):
     return outliers, lower_bound, upper_bound, outliers_mask
 
 # Detect outliers in acceleration channels
-acceleration_columns = ['ax', 'ay', 'az']
+acceleration_columns = ['lateral_g', 'longitudinal_g']
 outlier_summary = {}
 
 for column in acceleration_columns:
@@ -171,7 +172,7 @@ for column in acceleration_columns:
     }
     
     print(f"{column}: {len(outliers)} outliers ({len(outliers)/len(df)*100:.2f}%)")
-    print(f"  Valid range: [{lower:.3f}, {upper:.3f}] m/s²")
+    print(f"  Valid range: [{lower:.3f}, {upper:.3f}] g")
 
 # Remove outliers (conservative approach)
 def remove_outliers_conservative(data, columns, factor=2.0):
@@ -210,20 +211,32 @@ def apply_moving_average_filter(data, columns, window_size=10):
     return filtered_data
 
 # Apply filtering to sensor data
-sensor_columns = ['ax', 'ay', 'az', 'gx', 'gy', 'gz']
+sensor_columns = ['lateral_g', 'longitudinal_g', 'speed_kmh', 'steering_angle_deg']]
 df_filtered = apply_moving_average_filter(df_clean, sensor_columns, window_size=10)
 
 # Visualize filtering effect
 fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 axes = axes.ravel()
 
-for i, column in enumerate(['ax', 'ay', 'gx', 'gy']):
-    if i < 4:
-        axes[i].plot(df_filtered['timestamp'], df_filtered[f'{column}_raw'], 
+columns_to_plot = ['lateral_g', 'longitudinal_g', 'speed_kmh', 'steering_angle_deg']
+for i, column in enumerate(columns_to_plot):
+    if i < 4 and column in df_filtered.columns:
+        axes[i].plot(df_filtered['time_s'], df_filtered[f'{column}_raw'], 
                     alpha=0.3, label='Raw', color='gray')
-        axes[i].plot(df_filtered['timestamp'], df_filtered[column], 
+        axes[i].plot(df_filtered['time_s'], df_filtered[column], 
                     label='Filtered', color='blue')
-        axes[i].set_ylabel(f'{column} [{"m/s²" if column.startswith("a") else "rad/s"}]')
+        
+        # Set appropriate y-axis labels
+        if column == 'lateral_g' or column == 'longitudinal_g':
+            ylabel = f'{column} [g]'
+        elif column == 'speed_kmh':
+            ylabel = 'Speed [km/h]'
+        elif column == 'steering_angle_deg':
+            ylabel = 'Steering [deg]'
+        else:
+            ylabel = column
+            
+        axes[i].set_ylabel(ylabel)
         axes[i].set_xlabel('Time [s]')
         axes[i].legend()
         axes[i].grid(True, alpha=0.3)
@@ -233,220 +246,44 @@ plt.suptitle('Signal Filtering Effect', y=1.02)
 plt.show()
 ```
 
-## Coordinate System Transformations
-
-### Gravity Compensation
-```python
-# Estimate gravity vector from stationary period
-def estimate_gravity(data, stationary_duration=2.0):
-    """Estimate gravity from initial stationary period"""
-    stationary_mask = data['timestamp'] <= stationary_duration
-    stationary_data = data[stationary_mask]
-    
-    # Estimate gravity components
-    gravity_estimate = {
-        'gx': stationary_data['ax'].mean(),
-        'gy': stationary_data['ay'].mean(),  # Typically ~9.81 m/s²
-        'gz': stationary_data['az'].mean()
-    }
-    
-    gravity_magnitude = np.sqrt(sum(g**2 for g in gravity_estimate.values()))
-    
-    print(f"Estimated gravity components:")
-    for axis, g in gravity_estimate.items():
-        print(f"  {axis}: {g:.3f} m/s²")
-    print(f"Gravity magnitude: {gravity_magnitude:.3f} m/s² (expected: ~9.81)")
-    
-    return gravity_estimate
-
-gravity = estimate_gravity(df_filtered)
-
-# Apply gravity compensation
-df_compensated = df_filtered.copy()
-df_compensated['ax_body'] = df_compensated['ax'] - gravity['gx']
-df_compensated['ay_body'] = df_compensated['ay'] - gravity['gy']
-df_compensated['az_body'] = df_compensated['az'] - gravity['gz']
-
-# Convert to g-forces for engineering interpretation
-df_compensated['longitudinal_g'] = df_compensated['ax_body'] / 9.81
-df_compensated['lateral_g'] = df_compensated['ay_body'] / 9.81
-df_compensated['vertical_g'] = df_compensated['az_body'] / 9.81
-
-print("Applied gravity compensation and converted to g-forces")
-```
-
-### Vehicle Motion Calculations
-```python
-# Numerical integration for velocity and position
-def numerical_integration(data):
-    """Calculate velocity and position from acceleration"""
-    result = data.copy()
-    
-    # Calculate time differences
-    dt = result['timestamp'].diff().fillna(0)
-    
-    # Integrate acceleration to velocity (body frame)
-    result['vx'] = np.cumsum(result['ax_body'] * dt)
-    result['vy'] = np.cumsum(result['ay_body'] * dt)
-    result['vz'] = np.cumsum(result['az_body'] * dt)
-    
-    # Integrate velocity to position (body frame)
-    result['pos_x'] = np.cumsum(result['vx'] * dt)
-    result['pos_y'] = np.cumsum(result['vy'] * dt)
-    result['pos_z'] = np.cumsum(result['vz'] * dt)
-    
-    # Calculate total distance traveled
-    result['distance_calc'] = np.cumsum(np.sqrt(
-        (result['vx'] * dt)**2 + (result['vy'] * dt)**2
-    ))
-    
-    return result
-
-df_motion = numerical_integration(df_compensated)
-
-# Calculate derived parameters
-df_motion['speed_ms'] = df_motion['speed'] / 3.6  # Convert km/h to m/s
-df_motion['yaw_rate'] = df_motion['gz']  # rad/s
-
-# Cornering radius calculation (R = v / ω)
-df_motion['corner_radius'] = np.where(
-    np.abs(df_motion['yaw_rate']) > 0.001,
-    df_motion['speed_ms'] / np.abs(df_motion['yaw_rate']),
-    np.inf
-)
-
-# Limit radius to reasonable values
-df_motion['corner_radius'] = np.clip(df_motion['corner_radius'], 0, 1000)
-
-# Cornering speed and lateral acceleration relationship
-df_motion['theoretical_lateral_g'] = (df_motion['speed_ms']**2) / (df_motion['corner_radius'] * 9.81)
-
-print("Calculated derived motion parameters")
-```
-
-## Performance Analysis
-
-### Cornering Analysis
-```python
-# Define cornering phases
-def identify_cornering_phases(data, steering_threshold=5.0, min_duration=1.0):
-    """Identify cornering segments based on steering input"""
-    
-    # Detect cornering based on steering angle
-    cornering_mask = np.abs(data['steering_angle']) > steering_threshold
-    
-    # Find continuous cornering segments
-    cornering_changes = cornering_mask.diff().fillna(0)
-    corner_starts = data[cornering_changes == True]['timestamp'].values
-    corner_ends = data[cornering_changes == False]['timestamp'].values
-    
-    # Handle edge cases
-    if len(corner_starts) > 0 and len(corner_ends) > 0:
-        if corner_starts[0] > corner_ends[0]:
-            corner_ends = corner_ends[1:]
-        if len(corner_starts) > len(corner_ends):
-            corner_ends = np.append(corner_ends, data['timestamp'].iloc[-1])
-    
-    # Filter by minimum duration
-    valid_corners = []
-    for start, end in zip(corner_starts, corner_ends):
-        if end - start >= min_duration:
-            valid_corners.append({
-                'start_time': start,
-                'end_time': end,
-                'duration': end - start
-            })
-    
-    return valid_corners, cornering_mask
-
-corners, cornering_mask = identify_cornering_phases(df_motion)
-df_motion['is_cornering'] = cornering_mask
-
-print(f"Identified {len(corners)} cornering segments:")
-for i, corner in enumerate(corners):
-    print(f"  Corner {i+1}: {corner['start_time']:.1f}-{corner['end_time']:.1f}s ({corner['duration']:.1f}s)")
-```
+## Engineering Analysis
 
 ### Performance Metrics Calculation
 ```python
-def calculate_performance_metrics(data, cornering_segments):
-    """Calculate comprehensive performance metrics"""
+# Calculate additional performance metrics from telemetry data
+def calculate_performance_metrics(data):
+    """Calculate racing performance metrics"""
+    result = data.copy()
     
-    metrics = {
-        'overall': {},
-        'cornering': {},
-        'segments': []
-    }
+    # Total acceleration magnitude
+    result['total_g'] = np.sqrt(result['lateral_g']**2 + result['longitudinal_g']**2)
     
-    # Overall session metrics
-    metrics['overall'] = {
-        'duration': data['timestamp'].max() - data['timestamp'].min(),
-        'distance': data['distance'].iloc[-1] if 'distance' in data else data['distance_calc'].iloc[-1],
-        'max_speed': data['speed'].max(),
-        'avg_speed': data['speed'].mean(),
-        'max_lateral_g': data['lateral_g'].abs().max(),
-        'max_longitudinal_g': data['longitudinal_g'].abs().max(),
-        'min_corner_radius': data['corner_radius'].min()
-    }
+    # Cornering performance indicators
+    result['cornering_speed'] = np.where(
+        np.abs(result['lateral_g']) > 0.3,  # During cornering
+        result['speed_kmh'],
+        np.nan
+    )
     
-    # Cornering-specific metrics
-    cornering_data = data[data['is_cornering']]
-    if len(cornering_data) > 0:
-        metrics['cornering'] = {
-            'avg_corner_speed': cornering_data['speed'].mean(),
-            'max_corner_lateral_g': cornering_data['lateral_g'].abs().max(),
-            'avg_corner_radius': cornering_data['corner_radius'].mean(),
-            'cornering_time_percentage': len(cornering_data) / len(data) * 100
-        }
+    # Braking and acceleration zones
+    result['braking_zone'] = result['longitudinal_g'] < -0.2
+    result['acceleration_zone'] = result['longitudinal_g'] > 0.2
+    result['cornering_zone'] = np.abs(result['lateral_g']) > 0.3
     
-    # Individual segment analysis
-    for i, segment in enumerate(cornering_segments):
-        start_idx = data[data['timestamp'] >= segment['start_time']].index[0]
-        end_idx = data[data['timestamp'] <= segment['end_time']].index[-1]
-        segment_data = data.loc[start_idx:end_idx]
-        
-        segment_metrics = {
-            'segment_id': i + 1,
-            'start_time': segment['start_time'],
-            'end_time': segment['end_time'],
-            'duration': segment['duration'],
-            'avg_speed': segment_data['speed'].mean(),
-            'min_speed': segment_data['speed'].min(),
-            'max_lateral_g': segment_data['lateral_g'].abs().max(),
-            'avg_lateral_g': segment_data['lateral_g'].abs().mean(),
-            'min_corner_radius': segment_data['corner_radius'].min(),
-            'max_steering_angle': segment_data['steering_angle'].abs().max(),
-            'corner_entry_speed': segment_data['speed'].iloc[0],
-            'corner_exit_speed': segment_data['speed'].iloc[-1],
-            'speed_loss': segment_data['speed'].iloc[0] - segment_data['speed'].min()
-        }
-        
-        metrics['segments'].append(segment_metrics)
+    # Throttle effectiveness (speed change vs throttle input)
+    result['speed_change'] = result['speed_kmh'].diff()
+    result['throttle_effectiveness'] = result['speed_change'] / (result['throttle_percent'] + 1)
     
-    return metrics
+    return result
 
-# Calculate performance metrics
-performance = calculate_performance_metrics(df_motion, corners)
+df_metrics = calculate_performance_metrics(df_filtered)
 
-# Display results
-print("=== PERFORMANCE ANALYSIS ===")
-print(f"\nOverall Session:")
-for key, value in performance['overall'].items():
-    if isinstance(value, float):
-        print(f"  {key.replace('_', ' ').title()}: {value:.2f}")
-    else:
-        print(f"  {key.replace('_', ' ').title()}: {value}")
-
-print(f"\nCornering Performance:")
-for key, value in performance['cornering'].items():
-    print(f"  {key.replace('_', ' ').title()}: {value:.2f}")
-
-print(f"\nSegment Analysis:")
-for segment in performance['segments']:
-    print(f"  Segment {segment['segment_id']} ({segment['start_time']:.1f}-{segment['end_time']:.1f}s):")
-    print(f"    Speed: {segment['avg_speed']:.1f} km/h avg, {segment['speed_loss']:.1f} km/h loss")
-    print(f"    Lateral G: {segment['max_lateral_g']:.2f} max, {segment['avg_lateral_g']:.2f} avg")
-    print(f"    Corner radius: {segment['min_corner_radius']:.1f} m minimum")
+print("Performance metrics calculated:")
+print(f"Max total g-force: {df_metrics['total_g'].max():.2f} g")
+print(f"Max cornering speed: {df_metrics['cornering_speed'].max():.1f} km/h")
+print(f"Time in braking zones: {df_metrics['braking_zone'].sum() * df_metrics['time_s'].diff().mean():.1f} s")
+print(f"Time in acceleration zones: {df_metrics['acceleration_zone'].sum() * df_metrics['time_s'].diff().mean():.1f} s")
+print(f"Time in cornering zones: {df_metrics['cornering_zone'].sum() * df_metrics['time_s'].diff().mean():.1f} s")
 ```
 
 ## Data Visualization
@@ -457,13 +294,15 @@ for segment in performance['segments']:
 fig, axes = plt.subplots(4, 1, figsize=(15, 12))
 
 # Speed and throttle/brake
-axes[0].plot(df_motion['timestamp'], df_motion['speed'], 'b-', label='Speed')
+axes[0].plot(df_performance['time_s'], df_performance['speed_kmh'], 'b-', label='Speed')
 axes[0].set_ylabel('Speed [km/h]', color='b')
 axes[0].tick_params(axis='y', labelcolor='b')
 
 ax0_twin = axes[0].twinx()
-ax0_twin.plot(df_motion['timestamp'], df_motion['throttle'], 'g-', alpha=0.7, label='Throttle')
-ax0_twin.plot(df_motion['timestamp'], df_motion['brake_pressure']*5, 'r-', alpha=0.7, label='Brake×5')
+if 'throttle_percent' in df_performance.columns:
+    ax0_twin.plot(df_performance['time_s'], df_performance['throttle_percent'], 'g-', alpha=0.7, label='Throttle')
+if 'brake_pressure_bar' in df_performance.columns:
+    ax0_twin.plot(df_performance['time_s'], df_performance['brake_pressure_bar']*5, 'r-', alpha=0.7, label='Brake×5')
 ax0_twin.set_ylabel('Throttle [%] / Brake×5 [bar]', color='g')
 ax0_twin.tick_params(axis='y', labelcolor='g')
 
@@ -475,31 +314,41 @@ axes[0].set_title('Speed Profile and Driver Inputs')
 axes[0].grid(True, alpha=0.3)
 
 # Lateral and longitudinal acceleration
-axes[1].plot(df_motion['timestamp'], df_motion['lateral_g'], 'r-', label='Lateral G')
-axes[1].plot(df_motion['timestamp'], df_motion['longitudinal_g'], 'b-', label='Longitudinal G')
+axes[1].plot(df_performance['time_s'], df_performance['lateral_g'], 'r-', label='Lateral G')
+axes[1].plot(df_performance['time_s'], df_performance['longitudinal_g'], 'b-', label='Longitudinal G')
 axes[1].set_ylabel('Acceleration [g]')
 axes[1].legend()
 axes[1].grid(True, alpha=0.3)
 axes[1].set_title('Vehicle Accelerations')
 
-# Steering and yaw rate
-axes[2].plot(df_motion['timestamp'], df_motion['steering_angle'], 'g-', label='Steering Angle')
-axes[2].set_ylabel('Steering [deg]', color='g')
-axes[2].tick_params(axis='y', labelcolor='g')
+# Steering angle (if available)
+if 'steering_angle_deg' in df_performance.columns:
+    axes[2].plot(df_performance['time_s'], df_performance['steering_angle_deg'], 'g-', label='Steering Angle')
+    axes[2].set_ylabel('Steering [deg]', color='g')
+    axes[2].tick_params(axis='y', labelcolor='g')
+    axes[2].set_title('Steering Input')
+else:
+    # Show distance and sector progression
+    axes[2].plot(df_performance['time_s'], df_performance['distance_m'], 'purple', label='Distance')
+    axes[2].set_ylabel('Distance [m]', color='purple')
+    axes[2].tick_params(axis='y', labelcolor='purple')
+    axes[2].set_title('Distance Progression')
 
-ax2_twin = axes[2].twinx()
-ax2_twin.plot(df_motion['timestamp'], np.degrees(df_motion['yaw_rate']), 'purple', label='Yaw Rate')
-ax2_twin.set_ylabel('Yaw Rate [deg/s]', color='purple')
-ax2_twin.tick_params(axis='y', labelcolor='purple')
-axes[2].set_title('Steering Input and Vehicle Response')
 axes[2].grid(True, alpha=0.3)
 
-# Corner radius
-axes[3].plot(df_motion['timestamp'], df_motion['corner_radius'], 'orange', label='Corner Radius')
-axes[3].set_ylabel('Radius [m]')
+# Corner radius and total g-force
+axes[3].plot(df_performance['time_s'], df_performance['corner_radius'], 'orange', label='Corner Radius')
+axes[3].set_ylabel('Radius [m]', color='orange')
+axes[3].tick_params(axis='y', labelcolor='orange')
+
+ax3_twin = axes[3].twinx()
+ax3_twin.plot(df_performance['time_s'], df_performance['total_g'], 'purple', alpha=0.7, label='Total G')
+ax3_twin.set_ylabel('Total G [g]', color='purple')
+ax3_twin.tick_params(axis='y', labelcolor='purple')
+
 axes[3].set_xlabel('Time [s]')
-axes[3].set_ylim(0, 200)  # Focus on tight corners
-axes[3].set_title('Cornering Radius')
+axes[3].set_ylim(0, 100)  # Focus on realistic autocross corner radii
+axes[3].set_title('Cornering Metrics')
 axes[3].grid(True, alpha=0.3)
 
 plt.tight_layout()
@@ -508,31 +357,32 @@ plt.show()
 
 ### G-G Diagram (Traction Circle)
 
-The G-G diagram, also known as the traction circle, is a fundamental visualization tool in vehicle dynamics analysis that plots lateral acceleration versus longitudinal acceleration to show the vehicle's traction utilization (Milliken & Milliken, 1995).
+The G-G diagram, also known as the traction circle, is a fundamental visualization tool in vehicle dynamics analysis that plots lateral acceleration versus longitudinal acceleration to show the vehicle's traction utilization.
 
 ```python
 # Create G-G diagram (traction circle)
 plt.figure(figsize=(10, 10))
 
 # Plot all data points
-plt.scatter(df_motion['lateral_g'], df_motion['longitudinal_g'], 
-           c=df_motion['speed'], cmap='viridis', alpha=0.6, s=1)
+plt.scatter(df_performance['lateral_g'], df_performance['longitudinal_g'], 
+           c=df_performance['speed_kmh'], cmap='viridis', alpha=0.6, s=1)
 
 # Highlight cornering segments
-cornering_data = df_motion[df_motion['is_cornering']]
-plt.scatter(cornering_data['lateral_g'], cornering_data['longitudinal_g'], 
-           c='red', alpha=0.8, s=3, label='Cornering')
+cornering_data = df_performance[df_performance['is_cornering']]
+if len(cornering_data) > 0:
+    plt.scatter(cornering_data['lateral_g'], cornering_data['longitudinal_g'], 
+               c='red', alpha=0.8, s=3, label='Cornering')
 
-# Draw theoretical traction circle
+# Draw theoretical traction circle for autocross
 theta = np.linspace(0, 2*np.pi, 100)
-max_g = df_motion['lateral_g'].abs().max() * 1.1
+max_g = 1.5  # Typical autocross limit
 circle_x = max_g * np.cos(theta)
 circle_y = max_g * np.sin(theta)
-plt.plot(circle_x, circle_y, 'r--', alpha=0.5, label='Theoretical Limit')
+plt.plot(circle_x, circle_y, 'r--', alpha=0.5, label='Theoretical Limit (1.5g)')
 
 plt.xlabel('Lateral Acceleration [g]')
 plt.ylabel('Longitudinal Acceleration [g]')
-plt.title('G-G Diagram (Traction Circle)')
+plt.title('G-G Diagram - Nova Paka Autocross')
 plt.colorbar(label='Speed [km/h]')
 plt.legend()
 plt.grid(True, alpha=0.3)
@@ -540,146 +390,129 @@ plt.axis('equal')
 plt.show()
 
 # Calculate traction utilization
-df_motion['g_total'] = np.sqrt(df_motion['lateral_g']**2 + df_motion['longitudinal_g']**2)
-max_g_utilization = df_motion['g_total'].max()
-avg_g_utilization = df_motion['g_total'].mean()
+max_g_utilization = df_performance['total_g'].max()
+avg_g_utilization = df_performance['total_g'].mean()
 
-print(f"Traction Utilization:")
-print(f"  Maximum: {max_g_utilization:.3f} g")
-print(f"  Average: {avg_g_utilization:.3f} g")
+print(f"Traction Utilization Analysis:")
+print(f"  Maximum total g-force: {max_g_utilization:.3f} g")
+print(f"  Average total g-force: {avg_g_utilization:.3f} g")
 print(f"  Peak utilization: {max_g_utilization/1.5*100:.1f}% of theoretical maximum")
 ```
 
-### Vehicle Path Visualization
+### Speed vs Distance Analysis
 ```python
-# Plot vehicle trajectory
-plt.figure(figsize=(12, 8))
+# Plot speed profile vs distance (track map alternative)
+plt.figure(figsize=(15, 8))
 
-# Plot the path colored by speed
-path_plot = plt.scatter(df_motion['pos_y'], df_motion['pos_x'], 
-                       c=df_motion['speed'], cmap='viridis', s=10)
+# Main plot: Speed vs Distance
+plt.subplot(2, 1, 1)
+plt.plot(df_performance['distance_m'], df_performance['speed_kmh'], 'b-', linewidth=2)
 
 # Mark cornering segments
 for i, corner in enumerate(corners):
-    start_idx = df_motion[df_motion['timestamp'] >= corner['start_time']].index[0]
-    end_idx = df_motion[df_motion['timestamp'] <= corner['end_time']].index[-1]
-    corner_data = df_motion.loc[start_idx:end_idx]
-    
-    plt.plot(corner_data['pos_y'], corner_data['pos_x'], 'r-', linewidth=3, alpha=0.7)
-    
-    # Mark corner entry and exit
-    plt.plot(corner_data['pos_y'].iloc[0], corner_data['pos_x'].iloc[0], 'go', markersize=8, label='Entry' if i == 0 else "")
-    plt.plot(corner_data['pos_y'].iloc[-1], corner_data['pos_x'].iloc[-1], 'ro', markersize=8, label='Exit' if i == 0 else "")
+    corner_data = df_performance[
+        (df_performance['time_s'] >= corner['start_time']) & 
+        (df_performance['time_s'] <= corner['end_time'])
+    ]
+    if len(corner_data) > 0:
+        plt.plot(corner_data['distance_m'], corner_data['speed_kmh'], 'r-', linewidth=3, alpha=0.7)
+        # Add corner labels
+        mid_distance = corner_data['distance_m'].mean()
+        mid_speed = corner_data['speed_kmh'].mean()
+        plt.annotate(f'C{i+1}', (mid_distance, mid_speed), 
+                    xytext=(5, 5), textcoords='offset points', fontsize=8)
 
-plt.colorbar(path_plot, label='Speed [km/h]')
-plt.xlabel('Lateral Position [m]')
-plt.ylabel('Longitudinal Position [m]')
-plt.title('Vehicle Path Trajectory')
+plt.xlabel('Distance [m]')
+plt.ylabel('Speed [km/h]')
+plt.title('Speed Profile Along Nova Paka Track (930m)')
+plt.grid(True, alpha=0.3)
+plt.xlim(0, 930)  # Nova Paka track length
+
+# Secondary plot: G-forces vs Distance
+plt.subplot(2, 1, 2)
+plt.plot(df_performance['distance_m'], df_performance['lateral_g'], 'r-', alpha=0.7, label='Lateral G')
+plt.plot(df_performance['distance_m'], df_performance['longitudinal_g'], 'b-', alpha=0.7, label='Longitudinal G')
+plt.plot(df_performance['distance_m'], df_performance['total_g'], 'k-', linewidth=2, label='Total G')
+
+plt.xlabel('Distance [m]')
+plt.ylabel('Acceleration [g]')
+plt.title('G-Force Profile Along Track')
 plt.legend()
 plt.grid(True, alpha=0.3)
-plt.axis('equal')
+plt.xlim(0, 930)
+
+plt.tight_layout()
 plt.show()
+
+# Track sector analysis
+print("Nova Paka Track Analysis:")
+print(f"Total track length: {df_performance['distance_m'].max():.0f} m")
+for sector in range(1, 5):
+    sector_data = df_performance[df_performance['sector'] == sector]
+    if len(sector_data) > 0:
+        print(f"Sector {sector}: Avg speed {sector_data['speed_kmh'].mean():.1f} km/h, "
+              f"Max lateral g {sector_data['lateral_g'].abs().max():.2f}")
+
+print(f"Cornering segments identified: {len(corners)}")
+print(f"Total cornering time: {df_performance['is_cornering'].sum() * df_performance['time_s'].diff().mean():.1f}s")
 ```
 
 ## Data Export and Reporting
-
-### Export Processed Data
-```python
-# Export cleaned and processed data
-output_data = df_motion[[
-    'timestamp', 'speed', 'lateral_g', 'longitudinal_g', 'vertical_g',
-    'corner_radius', 'steering_angle', 'throttle', 'brake_pressure',
-    'pos_x', 'pos_y', 'is_cornering'
-]].copy()
-
-# Add performance classifications
-output_data['performance_zone'] = pd.cut(
-    output_data['speed'],
-    bins=[0, 60, 100, 150, 300],
-    labels=['Low', 'Medium', 'High', 'Racing']
-)
-
-output_data['cornering_intensity'] = pd.cut(
-    output_data['lateral_g'].abs(),
-    bins=[0, 0.3, 0.8, 1.2, 2.0],
-    labels=['Straight', 'Light', 'Moderate', 'Hard']
-)
-
-# Save to multiple formats
-output_data.to_csv('racing_analysis_processed.csv', index=False)
-output_data.to_hdf('data/racing_data.h5', key='processed_data', mode='w', complib='zlib')
-
-# Export performance summary
-performance_summary = pd.DataFrame([performance['overall']])
-performance_summary.to_csv('performance_summary.csv', index=False)
-
-# Export segment analysis
-segments_df = pd.DataFrame(performance['segments'])
-segments_df.to_csv('cornering_analysis.csv', index=False)
-
-print("Data export completed:")
-print(f"  - Processed data: racing_analysis_processed.csv ({len(output_data)} samples)")
-print(f"  - HDF5 archive: data/racing_data.h5")
-print(f"  - Performance summary: performance_summary.csv")
-print(f"  - Cornering analysis: cornering_analysis.csv ({len(segments_df)} segments)")
-```
-
 ### Generate Analysis Report
 ```python
-def generate_analysis_report(data, performance_metrics, corners):
-    """Generate comprehensive analysis report"""
+def generate_analysis_report(data):
+    """Generate comprehensive Nova Paka analysis report"""
+    
+    # Calculate basic statistics from the data
+    duration = data['time_s'].max() - data['time_s'].min()
+    distance = data['distance_m'].max()
+    avg_speed = data['speed_kmh'].mean()
+    max_speed = data['speed_kmh'].max()
+    max_lateral_g = data['lateral_g'].abs().max()
+    max_longitudinal_g = data['longitudinal_g'].abs().max()
     
     report = f"""
-# Racing Data Analysis Report
+# Nova Paka Autocross Analysis Report
 
 ## Session Overview
-- **Duration**: {performance_metrics['overall']['duration']:.1f} seconds
-- **Distance**: {performance_metrics['overall']['distance']:.1f} meters
-- **Average Speed**: {performance_metrics['overall']['avg_speed']:.1f} km/h
-- **Maximum Speed**: {performance_metrics['overall']['max_speed']:.1f} km/h
+- **Track**: Nova Paka (930m autocross circuit)
+- **Duration**: {duration:.1f} seconds
+- **Distance**: {distance:.1f} meters
+- **Average Speed**: {avg_speed:.1f} km/h
+- **Maximum Speed**: {max_speed:.1f} km/h
 
 ## Performance Highlights
-- **Peak Lateral G-Force**: {performance_metrics['overall']['max_lateral_g']:.2f} g
-- **Peak Longitudinal G-Force**: {performance_metrics['overall']['max_longitudinal_g']:.2f} g
-- **Minimum Corner Radius**: {performance_metrics['overall']['min_corner_radius']:.1f} meters
-- **Cornering Time**: {performance_metrics['cornering']['cornering_time_percentage']:.1f}% of session
+- **Peak Lateral G-Force**: {max_lateral_g:.2f} g
+- **Peak Longitudinal G-Force**: {max_longitudinal_g:.2f} g
 
-## Cornering Analysis
-- **Number of Corners**: {len(corners)}
-- **Average Corner Speed**: {performance_metrics['cornering']['avg_corner_speed']:.1f} km/h
-- **Maximum Corner G-Force**: {performance_metrics['cornering']['max_corner_lateral_g']:.2f} g
-- **Average Corner Radius**: {performance_metrics['cornering']['avg_corner_radius']:.1f} meters
+## Basic Statistics
+- **Samples**: {len(data)} data points
+- **Sampling Rate**: {len(data)/duration:.0f} Hz
+- **Speed Range**: {data['speed_kmh'].min():.1f} - {data['speed_kmh'].max():.1f} km/h
+- **G-Force Range**: ±{max(max_lateral_g, max_longitudinal_g):.2f} g maximum
 
-## Detailed Segment Analysis
-"""
-    
-    for segment in performance_metrics['segments']:
-        report += f"""
-### Segment {segment['segment_id']} ({segment['start_time']:.1f} - {segment['end_time']:.1f}s)
-- **Duration**: {segment['duration']:.1f} seconds
-- **Speed Profile**: {segment['corner_entry_speed']:.1f} → {segment['min_speed']:.1f} → {segment['corner_exit_speed']:.1f} km/h
-- **Speed Loss**: {segment['speed_loss']:.1f} km/h
-- **Peak Lateral G**: {segment['max_lateral_g']:.2f} g
-- **Average Lateral G**: {segment['avg_lateral_g']:.2f} g
-- **Minimum Radius**: {segment['min_corner_radius']:.1f} meters
-- **Maximum Steering**: {segment['max_steering_angle']:.1f} degrees
+## Data Quality
+- **Missing Values**: {data.isnull().sum().sum()} total
+- **Complete Data Coverage**: {(1 - data.isnull().sum().sum() / (len(data) * len(data.columns))) * 100:.1f}%
 """
     
     return report
 
 # Generate and save report
-report_content = generate_analysis_report(df_motion, performance, corners)
+report_content = generate_analysis_report(df_filtered)
 
-with open('racing_analysis_report.md', 'w') as f:
+with open('nova_paka_analysis_report.md', 'w') as f:
     f.write(report_content)
 
-print("Analysis report generated: racing_analysis_report.md")
+print("Nova Paka analysis report generated: nova_paka_analysis_report.md")
 ```
 
 ## References
 
-Milliken, W. F., & Milliken, D. L. (1995). *Race Car Vehicle Dynamics*. SAE International. ISBN: 978-1-56091-526-3.
+1. **Nova Paka Autocross Circuit**: 930m clay-sandy surface circuit in the Czech Republic, regularly used for European Autocross Championship events.
 
-> **Note**: This seminal work on vehicle dynamics introduced many of the fundamental concepts used in racing data analysis, including the G-G diagram (traction circle) which has become the standard visualization for understanding vehicle performance limits and tire utilization.
+2. **Formula Student Telemetry**: Standard data acquisition systems used in Formula Student competitions, providing high-frequency vehicle dynamics data.
 
-This comprehensive case study demonstrates the complete workflow from raw racing data to meaningful engineering insights, including data cleaning, coordinate transformations, performance analysis, and professional reporting. The processed data and analysis results provide the foundation for further visualization and interactive analysis in subsequent course sessions.
+3. Milliken, W. F., & Milliken, D. L. (1995). *Race Car Vehicle Dynamics*. SAE International.
+
+> **Educational Note**: This comprehensive case study demonstrates the complete workflow from raw racing telemetry data to meaningful engineering insights. The Nova Paka dataset provides realistic autocross racing scenarios with appropriate speed ranges (15-50 km/h) and g-force levels (up to 1.5g) typical of tight autocross circuits. The processed data and analysis results provide the foundation for advanced visualization and interactive analysis in subsequent course modules.

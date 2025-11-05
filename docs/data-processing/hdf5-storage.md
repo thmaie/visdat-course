@@ -106,15 +106,28 @@ print(f"Saved {len(racing_data)} samples to HDF5")
 df_loaded = pd.read_hdf('data/racing_data.h5', 'telemetry')
 print(f"Loaded {len(df_loaded)} samples")
 
-# Read subset with conditions (very fast!)
-high_speed_data = pd.read_hdf('data/racing_data.h5', 'telemetry',
-                             where='speed_kmh > 40')
+# Method 1: Filter after loading (works with fixed format)
+high_speed_data = df_loaded[df_loaded['speed'] > 40]
 print(f"Found {len(high_speed_data)} high-speed samples")
 
-# Read time range
-time_segment = pd.read_hdf('data/racing_data.h5', 'telemetry',
-                          where='time_s >= 30 & time_s <= 60')
+# Read time range (using actual column names)
+time_segment = df_loaded[(df_loaded['timestamp'] >= 30) & (df_loaded['timestamp'] <= 60)]
 print(f"30-60 second segment: {len(time_segment)} samples")
+
+# Method 2: Use table format for where queries (requires recreation)
+# First convert to table format with queryable columns
+df_loaded.to_hdf('data/racing_data_table.h5', 
+                key='telemetry', 
+                mode='w',
+                format='table',  # Enables where queries
+                data_columns=['speed', 'timestamp', 'throttle_position'],  # Specify queryable columns
+                complib='zlib', 
+                complevel=9)
+
+# Now where queries work!
+high_speed_query = pd.read_hdf('data/racing_data_table.h5', 'telemetry', 
+                              where='speed > 40')
+print(f"Where query result: {len(high_speed_query)} high-speed samples")
 ```
 
 ### Hierarchical Data Organization
@@ -161,22 +174,34 @@ print("Nova Paka European Championship event data structure created")
 with pd.HDFStore('data/racing_data.h5', mode='r') as store:
     print("Available datasets:")
     for key in store.keys():
-        print(f"  {key}: {store.get_storer(key).nrows} rows")
+        # For fixed format, we need to read the shape instead of using nrows
+        try:
+            nrows = store.get_storer(key).nrows
+            if nrows is None:
+                # For fixed format, get the shape directly
+                data_shape = store[key].shape
+                nrows = data_shape[0]
+            print(f"  {key}: {nrows} rows")
+        except Exception as e:
+            print(f"  {key}: Unable to get row count ({e})")
 
 # Load specific championship run data
-semifinal_data = pd.read_hdf('data/racing_data.h5', 'sessions')
-high_speed_sections = pd.read_hdf('data/racing_data.h5', 'telemetry',
-                              where='speed > 130')  # High-speed sections on clay-sand
+high_speed_sections = pd.read_hdf('data/racing_data.h5', 'telemetry')
+# Filter for high-speed sections (using actual column names)
+high_speed_sections = high_speed_sections[high_speed_sections['speed'] > 50]
 ```
 
 ### Advanced HDF5 Features
 
 #### Metadata and Attributes
 ```python
+# load telemetry out of racing data racing data
+telemetry = pd.read_hdf('data/racing_data.h5', 'telemetry')
+
 # Add metadata to datasets
 with pd.HDFStore('data/racing_data.h5', mode='w') as store:
     # Store the main telemetry data
-    store['telemetry'] = racing_data
+    store['telemetry'] = telemetry
     
     # Add comprehensive metadata
     store.get_storer('telemetry').attrs.metadata = {
@@ -243,21 +268,25 @@ with pd.HDFStore('data/racing_data.h5', mode='r') as store:
 
 #### Efficient Querying Strategies
 ```python
-# Complex queries with multiple conditions for clay-sand surface
-cornering_data = pd.read_hdf('data/racing_data.h5', 'telemetry',
-                            where=['abs(steering_angle) > 20',  # More steering on clay-sand
-                                  'speed > 35',
-                                  'timestamp >= 20'])
+# Note: These examples require table format with data_columns specified
+# Convert to table format first if needed:
+# df.to_hdf('data.h5', 'telemetry', format='table', data_columns=['speed', 'steering_angle', 'timestamp'])
 
-# Time-based queries for 930m track
+# For fixed format (default), use post-load filtering:
+df = pd.read_hdf('data/racing_data.h5', 'telemetry')
+
+# Complex filtering with multiple conditions for clay-sand surface
+cornering_data = df[(abs(df['steering_angle']) > 20) &  # More steering on clay-sand
+                   (df['speed'] > 35) &
+                   (df['timestamp'] >= 20)]
+
+# Time-based filtering for 930m track
 run_start = 3.5   # seconds (after asphalt start section)
 run_end = 62.4    # seconds (typical completion time)
-run_data = pd.read_hdf('data/racing_data.h5', 'telemetry',
-                      where=f'timestamp >= {run_start} & timestamp <= {run_end}')
+run_data = df[(df['timestamp'] >= run_start) & (df['timestamp'] <= run_end)]
 
-# Surface-specific queries for clay-sand conditions
-high_grip_samples = pd.read_hdf('data/racing_data.h5', 'telemetry',
-                               where='abs(ay) > 1.5')  # High lateral g on good grip sections
+# Surface-specific filtering for clay-sand conditions
+high_grip_samples = df[abs(df['ay']) > 1.5]  # High lateral g on good grip sections
 ```
 
 ### Performance Comparison
@@ -282,17 +311,14 @@ large_dataset = pd.DataFrame({
 # Save in different formats
 large_dataset.to_csv('large_dataset.csv', index=False)
 large_dataset.to_hdf('large_dataset.h5', key='data', mode='w', complib='zlib', complevel=9)
-large_dataset.to_parquet('large_dataset.parquet', compression='snappy')
 
 # Compare file sizes
 csv_size = os.path.getsize('large_dataset.csv') / 1e6
 hdf5_size = os.path.getsize('large_dataset.h5') / 1e6
-parquet_size = os.path.getsize('large_dataset.parquet') / 1e6
 
 print(f"File size comparison (3.6M samples):")
 print(f"CSV:     {csv_size:.1f} MB")
 print(f"HDF5:    {hdf5_size:.1f} MB  ({csv_size/hdf5_size:.1f}x smaller)")
-print(f"Parquet: {parquet_size:.1f} MB  ({csv_size/parquet_size:.1f}x smaller)")
 ```
 
 #### Query Performance Comparison
@@ -312,127 +338,14 @@ def csv_query():
     df = pd.read_csv('large_dataset.csv')
     return df[(df['speed'] > 120) & (df['timestamp'] >= 1800)]
 
-# HDF5 query (filter during read)
+# HDF5 query (load all, then filter - works with fixed format)
 def hdf5_query():
-    return pd.read_hdf('large_dataset.h5', 'data',
-                      where='speed > 120 & timestamp >= 1800')
-
-# Parquet query
-def parquet_query():
-    df = pd.read_parquet('large_dataset.parquet')
+    df = pd.read_hdf('large_dataset.h5', 'data')
     return df[(df['speed'] > 120) & (df['timestamp'] >= 1800)]
 
 print("Query performance comparison:")
 csv_result = time_query("CSV", csv_query)
 hdf5_result = time_query("HDF5", hdf5_query)
-parquet_result = time_query("Parquet", parquet_query)
-```
-
-### Production Data Management
-
-#### Multi-File Dataset Management
-```python
-class RacingDataManager:
-    """Manage multiple racing session files"""
-    
-    def __init__(self, base_path='racing_data'):
-        self.base_path = base_path
-        os.makedirs(base_path, exist_ok=True)
-    
-    def save_session(self, session_data, session_type, date, driver, track):
-        """Save a racing session with standardized naming"""
-        filename = f"{date}_{track}_{session_type}_{driver}.h5"
-        filepath = os.path.join(self.base_path, filename)
-        
-        with pd.HDFStore(filepath, mode='w') as store:
-            store['telemetry'] = session_data
-            store.get_storer('telemetry').attrs.metadata = {
-                'session_type': session_type,
-                'date': date,
-                'driver': driver,
-                'track': track,
-                'created': pd.Timestamp.now().isoformat()
-            }
-        
-        return filepath
-    
-    def load_session(self, date, track, session_type, driver):
-        """Load a specific racing session"""
-        filename = f"{date}_{track}_{session_type}_{driver}.h5"
-        filepath = os.path.join(self.base_path, filename)
-        
-        if not os.path.exists(filepath):
-            raise FileNotFoundError(f"Session not found: {filename}")
-        
-        return pd.read_hdf(filepath, 'telemetry')
-    
-    def list_sessions(self):
-        """List all available sessions"""
-        sessions = []
-        for filename in os.listdir(self.base_path):
-            if filename.endswith('.h5'):
-                parts = filename[:-3].split('_')
-                if len(parts) >= 4:
-                    sessions.append({
-                        'date': parts[0],
-                        'track': parts[1],
-                        'session_type': parts[2],
-                        'driver': '_'.join(parts[3:]),
-                        'filename': filename
-                    })
-        return pd.DataFrame(sessions)
-    
-    def query_across_sessions(self, query_condition):
-        """Query data across multiple sessions"""
-        results = []
-        for filename in os.listdir(self.base_path):
-            if filename.endswith('.h5'):
-                filepath = os.path.join(self.base_path, filename)
-                try:
-                    session_data = pd.read_hdf(filepath, 'telemetry', where=query_condition)
-                    if len(session_data) > 0:
-                        session_data['session_file'] = filename
-                        results.append(session_data)
-                except Exception as e:
-                    print(f"Error querying {filename}: {e}")
-        
-        return pd.concat(results, ignore_index=True) if results else pd.DataFrame()
-
-# Example usage
-manager = RacingDataManager()
-
-# Save session data
-manager.save_session(racing_data, 'qualifying', '2016-07-03', 'novak', 'nova_paka')
-
-# List all sessions
-sessions = manager.list_sessions()
-print(sessions)
-
-# Query high-speed data across all sessions (autocross speeds typically lower)
-high_speed_across_sessions = manager.query_across_sessions('speed > 80')
-```
-
-#### Archival and Backup Strategies
-```python
-import shutil
-import gzip
-
-def create_compressed_archive(source_file, archive_name):
-    """Create compressed archive of HDF5 file"""
-    with open(source_file, 'rb') as f_in:
-        with gzip.open(f"{archive_name}.gz", 'wb') as f_out:
-            shutil.copyfileobj(f_in, f_out)
-    
-    # Compare sizes
-    original_size = os.path.getsize(source_file) / 1e6
-    compressed_size = os.path.getsize(f"{archive_name}.gz") / 1e6
-    
-    print(f"Archive created: {archive_name}.gz")
-    print(f"Size: {original_size:.1f} MB → {compressed_size:.1f} MB")
-    print(f"Compression ratio: {original_size/compressed_size:.1f}x")
-
-# Create archive
-create_compressed_archive('race_weekend.h5', 'race_weekend_archive')
 ```
 
 ## Best Practices for HDF5 in Engineering
@@ -471,73 +384,6 @@ racing_data.to_hdf('optimized_data.h5',
                   min_itemsize=50,       # Optimize string columns
                   data_columns=True,     # Enable querying on all columns
                   chunksize=10000)       # Optimize for your typical query size
-```
-
-### 3. **Error Handling and Validation**
-```python
-def safe_hdf5_operation(filepath, operation, **kwargs):
-    """Safely perform HDF5 operations with error handling"""
-    try:
-        return operation(filepath, **kwargs)
-    except Exception as e:
-        print(f"HDF5 operation failed: {e}")
-        
-        # Check file integrity
-        try:
-            with h5py.File(filepath, 'r') as f:
-                print("File is readable")
-        except Exception as integrity_error:
-            print(f"File integrity issue: {integrity_error}")
-        
-        raise e
-
-# Example usage
-def load_with_validation(filepath, key):
-    """Load HDF5 data with validation"""
-    data = pd.read_hdf(filepath, key)
-    
-    # Validate data
-    if data.empty:
-        raise ValueError("Loaded dataset is empty")
-    
-    if data.isnull().all().any():
-        print("Warning: Some columns are entirely null")
-    
-    return data
-
-racing_data = safe_hdf5_operation('racing_data.h5', load_with_validation, key='telemetry')
-```
-
-### 4. **Performance Monitoring**
-```python
-import psutil
-import time
-
-def monitor_hdf5_performance(func, *args, **kwargs):
-    """Monitor memory and time usage of HDF5 operations"""
-    process = psutil.Process()
-    
-    # Before operation
-    mem_before = process.memory_info().rss / 1e6  # MB
-    time_start = time.time()
-    
-    # Perform operation
-    result = func(*args, **kwargs)
-    
-    # After operation
-    mem_after = process.memory_info().rss / 1e6   # MB
-    time_end = time.time()
-    
-    print(f"Operation completed in {time_end - time_start:.2f} seconds")
-    print(f"Memory usage: {mem_before:.1f} MB → {mem_after:.1f} MB")
-    print(f"Memory delta: {mem_after - mem_before:+.1f} MB")
-    
-    return result
-
-# Example usage
-large_data = monitor_hdf5_performance(
-    pd.read_hdf, 'large_dataset.h5', 'data', where='speed > 100'
-)
 ```
 
 HDF5 provides a robust, high-performance solution for managing large engineering datasets. Its combination of compression, hierarchical organization, and fast querying capabilities makes it ideal for racing telemetry, sensor data, and other time-series engineering applications.
