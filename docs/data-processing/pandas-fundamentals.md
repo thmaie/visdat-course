@@ -62,6 +62,10 @@ telemetry = pd.read_csv('data/telemetry_detailed.csv')
 print(f"Telemetry points: {len(telemetry)}")
 print(f"Speed range: {telemetry['speed_kmh'].min()}-{telemetry['speed_kmh'].max()} km/h")
 ```
+
+### Additional Data Loading Examples
+```python
+# Alternative data loading examples
 df = pd.read_csv('sensor_data.csv')
 df_excel = pd.read_excel('measurements.xlsx', sheet_name='Sheet1')
 df_json = pd.read_json('telemetry.json')
