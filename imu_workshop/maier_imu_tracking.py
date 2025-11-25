@@ -97,7 +97,7 @@ def butter_lowpass_filter(data, cutoff, fs, order=2):
     return filtered_data
 
 # Filter parameters
-cutoff_frequency = 5  # Hz (adjust based on your movement speed)
+cutoff_frequency = 5  # Hz 
 fs = sampling_rate
 
 # Apply filter to accelerometer data
@@ -127,6 +127,7 @@ plt.suptitle('Raw vs. Filtered Acceleration')
 plt.tight_layout()
 plt.savefig('02_filtered_acceleration.png', dpi=300)
 #plt.show()
+
 
 from ahrs.filters import Madgwick
 
@@ -297,6 +298,22 @@ ax.set_zlabel('Z Position (m)')
 ax.set_title('Reconstructed 3D Trajectory')
 ax.legend()
 
+# Set equal aspect ratio
+x = df['pos_x']
+y = df['pos_y']
+z = df['pos_z']
+
+max_range = max(
+    x.max() - x.min(), y.max() - y.min(), z.max() - z.min()) / 2.0
+
+mid_x = (x.max() + x.min()) / 2.0
+mid_y = (y.max() + y.min()) / 2.0
+mid_z = (z.max() + z.min()) / 2.0
+
+ax.set_xlim(mid_x - max_range, mid_x + max_range)
+ax.set_ylim(mid_y - max_range, mid_y + max_range)
+ax.set_zlim(mid_z - max_range, mid_z + max_range)
+# ------------------------------------------------------
 plt.tight_layout()
 plt.savefig('07_trajectory_3d.png', dpi=300)
 plt.show()
@@ -309,7 +326,7 @@ accel_magnitude = np.sqrt(
 )
 
 # Define stationary threshold
-stationary_threshold = 0.2  # m/s²
+stationary_threshold = 0.2 # m/s²
 is_stationary = accel_magnitude < stationary_threshold
 
 # Apply ZUPT: reset velocity during stationary periods
@@ -342,4 +359,232 @@ ax2.grid(True)
 
 plt.tight_layout()
 plt.savefig('08_zupt_comparison.png', dpi=300)
+plt.show()
+
+# Use first stationary period to estimate bias
+stationary_period = df[df['time'] <= 2.0]
+
+# Estimate acceleration bias
+accel_bias = stationary_period[['accel_x_filt', 'accel_y_filt', 'accel_z_filt']].mean()
+print(f"Estimated acceleration bias: {accel_bias.values}")
+
+# Estimate gyroscope bias
+gyro_bias = stationary_period[['gyro_x_filt', 'gyro_y_filt', 'gyro_z_filt']].mean()
+print(f"Estimated gyroscope bias: {gyro_bias.values}")
+
+# Apply bias correction
+df['accel_x_corrected'] = df['accel_x_filt'] - accel_bias['accel_x_filt']
+df['accel_y_corrected'] = df['accel_y_filt'] - accel_bias['accel_y_filt']
+df['accel_z_corrected'] = df['accel_z_filt'] - accel_bias['accel_z_filt']
+
+# Filter parameters
+cutoff_frequency = 5  # Hz 
+fs = sampling_rate
+
+# Apply filter to accelerometer data
+df['accel_x_filt_corrected'] = butter_lowpass_filter(df['accel_x_corrected'], cutoff_frequency, fs)
+df['accel_y_filt_corrected'] = butter_lowpass_filter(df['accel_y_corrected'], cutoff_frequency, fs)
+df['accel_z_filt_corrected'] = butter_lowpass_filter(df['accel_z_corrected'], cutoff_frequency, fs)
+
+
+fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+
+for i, axis in enumerate(['x', 'y', 'z']):
+    axes[i].plot(df['time'], df[f'accel_{axis}_corrected'], 
+                 label='Raw', alpha=0.5, linewidth=0.5)
+    axes[i].plot(df['time'], df[f'accel_{axis}_filt_corrected'], 
+                 label='Filtered', linewidth=2)
+    axes[i].set_ylabel(f'Acceleration {axis.upper()} (m/s²)')
+    axes[i].legend()
+    axes[i].grid(True)
+
+axes[2].set_xlabel('Time (s)')
+plt.suptitle('Raw vs. Filtered Acceleration_corrected')
+plt.tight_layout()
+plt.savefig('02_filtered_acceleration__corrected.png', dpi=300)
+#plt.show()
+
+from ahrs.filters import Madgwick
+
+# Initialize the Madgwick filter
+madgwick = Madgwick(frequency=sampling_rate, gain=0.1)
+
+# Prepare arrays for orientation storage
+quaternions = np.zeros((len(df), 4))
+quaternions[0] = np.array([1.0, 0.0, 0.0, 0.0])  # Initial orientation (identity)
+
+# Iterate through sensor measurements
+for i in range(1, len(df)):
+    # Extract accelerometer and gyroscope values
+    accel = df[['accel_x_filt_corrected', 'accel_y_filt_corrected', 'accel_z_filt_corrected']].iloc[i].values
+    gyro = df[['gyro_x_filt', 'gyro_y_filt', 'gyro_z_filt']].iloc[i].values
+    
+    # Normalize accelerometer (Madgwick uses it as direction reference)
+    accel_norm = accel / (np.linalg.norm(accel) + 1e-12)
+    
+    # Update orientation estimate
+    quaternions[i] = madgwick.updateIMU(quaternions[i-1], gyr=gyro, acc=accel_norm)
+
+# Store quaternions in dataframe
+df['q_w'] = quaternions[:, 0]
+df['q_x'] = quaternions[:, 1]
+df['q_y'] = quaternions[:, 2]
+df['q_z'] = quaternions[:, 3]
+
+from scipy.spatial.transform import Rotation as R
+
+# Create array for global accelerations
+accel_global = np.zeros((len(df), 3))
+
+for i in range(len(df)):
+    # Get local acceleration (in phone frame)
+    accel_local = df[['accel_x_filt_corrected', 'accel_y_filt_corrected', 'accel_z_filt_corrected']].iloc[i].values
+    
+    # Get rotation at this time step
+    q = quaternions[i]  # Our format: [w, x, y, z]
+    rotation = R.from_quat([q[1], q[2], q[3], q[0]])  # scipy expects [x, y, z, w]
+    
+    # Rotate acceleration to global frame
+    accel_global[i] = rotation.apply(accel_local)
+
+# Store global accelerations
+df['accel_global_x_corrected'] = accel_global[:, 0]
+df['accel_global_y_corrected'] = accel_global[:, 1]
+df['accel_global_z_corrected'] = accel_global[:, 2]
+
+# Gravity is approximately 9.81 m/s² in the negative Z direction
+# Estimate gravity from the mean during stationary periods
+baseline_global = df.iloc[:int(2*sampling_rate)]  # First 2 seconds
+gravity_global = baseline_global[['accel_global_x_corrected', 'accel_global_y_corrected', 'accel_global_z_corrected']].mean()
+
+print(f"Estimated gravity vector: {gravity_global.values}")
+
+# Remove gravity
+df['accel_motion_x_corrected'] = df['accel_global_x_corrected'] - gravity_global['accel_global_x_corrected']
+df['accel_motion_y_corrected'] = df['accel_global_y_corrected'] - gravity_global['accel_global_y_corrected']
+df['accel_motion_z_corrected'] = df['accel_global_z_corrected'] - gravity_global['accel_global_z_corrected']
+
+fig, axes = plt.subplots(3, 1, figsize=(12, 8))
+
+axes[0].plot(df['time'], df['accel_motion_x_corrected'])
+axes[0].set_ylabel('Global X (m/s²)')
+axes[0].grid(True)
+
+axes[1].plot(df['time'], df['accel_motion_y_corrected'])
+axes[1].set_ylabel('Global Y (m/s²)')
+axes[1].grid(True)
+
+axes[2].plot(df['time'], df['accel_motion_z_corrected'])
+axes[2].set_ylabel('Global Z (m/s²)')
+axes[2].set_xlabel('Time (s)')
+axes[2].grid(True)
+
+plt.suptitle('Motion Acceleration in Global Coordinates')
+plt.tight_layout()
+plt.savefig('04_global_acceleration_corrected.png', dpi=300)
+plt.show()
+
+
+# Calculate time step for each sample
+dt_array = df['time'].diff().fillna(0).values
+
+# Initialize velocity and position arrays
+velocity_corrected = np.zeros((len(df), 3))
+position_corrected = np.zeros((len(df), 3))
+
+# Extract acceleration arrays for efficient indexing
+accel_x_corrected = df['accel_motion_x_corrected'].values
+accel_y_corrected = df['accel_motion_y_corrected'].values
+accel_z_corrected = df['accel_motion_z_corrected'].values
+
+# Numerical integration using trapezoidal rule
+for i in range(1, len(df)):
+    # First integration: Acceleration → Velocity (trapezoidal rule)
+    accel_current_corrected = np.array([accel_x_corrected[i], accel_y_corrected[i], accel_z_corrected[i]])
+    accel_previous_corrected = np.array([accel_x_corrected[i-1], accel_y_corrected[i-1], accel_z_corrected[i-1]])
+    velocity_corrected[i] = velocity_corrected[i-1] + 0.5 * (accel_previous_corrected + accel_current_corrected) * dt_array[i]
+    
+    # Second integration: Velocity → Position (trapezoidal rule)
+    position_corrected[i] = position_corrected[i-1] + 0.5 * (velocity_corrected[i-1] + velocity_corrected[i]) * dt_array[i]
+
+# Store results
+df['vel_x'] = velocity_corrected[:, 0]
+df['vel_y'] = velocity_corrected[:, 1]
+df['vel_z'] = velocity_corrected[:, 2]
+
+df['pos_x'] = position_corrected[:, 0]
+df['pos_y'] = position_corrected[:, 1]
+df['pos_z'] = position_corrected[:, 2]
+
+fig, axes = plt.subplots(3, 1, figsize=(12, 8))
+
+axes[0].plot(df['time'], df['vel_x'])
+axes[0].set_ylabel('Velocity_corrected X (m/s)')
+axes[0].grid(True)
+
+axes[1].plot(df['time'], df['vel_y'])
+axes[1].set_ylabel('Velocity_corrected Y (m/s)')
+axes[1].grid(True)
+
+axes[2].plot(df['time'], df['vel_z'])
+axes[2].set_ylabel('Velocity_corrected Z (m/s)')
+axes[2].set_xlabel('Time (s)')
+axes[2].grid(True)
+
+plt.suptitle('Reconstructed Velocity_corrected')
+plt.tight_layout()
+plt.savefig('05_velocity_corrected.png', dpi=300)
+plt.show()
+
+plt.figure(figsize=(10, 10))
+plt.plot(df['pos_x'], df['pos_y'], linewidth=2, label='Trajectory')
+plt.scatter(df['pos_x'].iloc[0], df['pos_y'].iloc[0], 
+            c='green', s=200, marker='o', label='Start', zorder=5)
+plt.scatter(df['pos_x'].iloc[-1], df['pos_y'].iloc[-1], 
+            c='red', s=200, marker='X', label='End', zorder=5)
+plt.xlabel('X Position (m)')
+plt.ylabel('Y Position (m)')
+plt.title('Reconstructed Trajectory_corrected (Top View)')
+plt.axis('equal')
+plt.grid(True, alpha=0.3)
+plt.legend()
+
+plt.tight_layout()
+plt.savefig('06_trajectory_2d_corrected.png', dpi=300)
+plt.show()
+
+# Define stationary threshold
+stationary_threshold = 0.2 # m/s²
+is_stationary = accel_magnitude < stationary_threshold
+
+# Apply ZUPT: reset velocity during stationary periods
+velocity_zupt = velocity_corrected.copy()
+for i in range(len(df)):
+    if is_stationary.iloc[i]:
+        velocity_zupt[i] = np.array([0.0, 0.0, 0.0])
+
+# Reintegrate position with ZUPT-corrected velocity using trapezoidal rule
+position_zupt = np.zeros((len(df), 3))
+for i in range(1, len(df)):
+    position_zupt[i] = position_zupt[i-1] + 0.5 * (velocity_zupt[i-1] + velocity_zupt[i]) * dt_array[i]
+
+# Compare trajectories
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+ax1.plot(position_corrected[:, 0], position_corrected[:, 1], label='Without ZUPT')
+ax1.set_xlabel('X (m)')
+ax1.set_ylabel('Y (m)')
+ax1.set_title('Trajectory Without ZUPT')
+ax1.axis('equal')
+ax1.grid(True)
+
+ax2.plot(position_zupt[:, 0], position_zupt[:, 1], label='With ZUPT', color='orange')
+ax2.set_xlabel('X (m)')
+ax2.set_ylabel('Y (m)')
+ax2.set_title('Trajectory With ZUPT')
+ax2.axis('equal')
+ax2.grid(True)
+
+plt.tight_layout()
+plt.savefig('08_zupt_comparison_corrected.png', dpi=300)
 plt.show()
