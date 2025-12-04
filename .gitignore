@@ -39,6 +39,20 @@ coverage/
 *.swo
 *~
 
+# venv directory
+venv/
+**/*venv*/
+**/venv/
+.venv/
+**/*.venv*/
+**/.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
 # OS generated files
 .DS_Store
 .DS_Store?
