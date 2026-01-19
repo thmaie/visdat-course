@@ -21,6 +21,21 @@ from find_and_plot_modes import (
     find_eigenfrequencies
 )
 
+# ======================================================
+# 4. MEASUREMENT-MAPS PRO KANTE
+# ======================================================
+MEASUREMENT_MAP = {
+    "X": {
+        "LEFT": [(8, 45, +1), (10, 33, +1), (12, 21, +1)],
+        #"RIGHT": [(0, 34, -1), (3, 22, -1), (5, 46, -1)],
+        #"BACK_RIGHT": [(6, 47, -1), (14, 35, -1), (16, 23, -1)],
+    },
+    "Y": {
+        "FRONT_LEFT": [(7, 45, +1), (9, 33, +1), (1, 21, +1)],
+        #"FRONT_RIGHT": [(1, 34, +1), (4, 22, -1), (2, 46, +1)],
+        #"BACK_RIGHT": [(13, 47, -1), (15, 35, -1), (17, 23, -1)],
+    }
+}
 
 
 
@@ -71,7 +86,7 @@ class Plott_UEfkt_Modes(QMainWindow):
         )
         ax.set_xticks([])  # keine x-Achse
         ax.set_yticks([])  # keine y-Achse
-        ax.set_frame_on(False)  # optional: Rahmen aus
+        ax.set_frame_on(False)  # Rahmen aus
         self.canvas.draw()
 
 
@@ -87,7 +102,8 @@ class Plott_UEfkt_Modes(QMainWindow):
     # ======================================================
     def create_menus(self):
         menubar = self.menuBar()
-        file_menu = menubar.addMenu("&Load File")
+        file_menu = menubar.addMenu("&File")
+        image_menu = menubar.addMenu("&Bild")
 
         open_fft = QAction("Öffne Üfkt FFT Imaginärteil File", self)
         open_fft.triggered.connect(self.open_fft_file)
@@ -106,6 +122,10 @@ class Plott_UEfkt_Modes(QMainWindow):
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+
+        save_image = QAction("Bild Speichern", self)
+        save_image.triggered.connect(self.save_image)  
+        image_menu.addAction(save_image)
 
     # ======================================================
     # CONTROLS
@@ -280,8 +300,20 @@ class Plott_UEfkt_Modes(QMainWindow):
         self.tf_imag = df[kanalnamen].values
 
         self.statusBar().showMessage("Imaginär-FFT geladen", 5000)
+   
+    def save_image(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Image",
+            "",
+            "PNG Files (*.png);;JPEG Files (*.jpg);;All Files (*)"
+        )
+        if not path:
+            return
 
-        self.hammer_node_ids = np.array([3, 5, 7, 9, 11, 13, 15, 17, 19])
+        self.figure.savefig(path)
+        self.statusBar().showMessage(f"Bild gespeichert: {path}", 5000)
+
     # ======================================================
     # MODE-AUSWAHL AKTIVIEREN
     # ======================================================
@@ -298,7 +330,7 @@ class Plott_UEfkt_Modes(QMainWindow):
             self.mode_combo.addItem(f"Mode {i + 1}")
 
     # ======================================================
-    # Eigenfrequenzen plotten
+    # Eigenfrequenzen bestimmen
     # ======================================================
     def find_and_fill_eigenfreqs(self, tf_mag, xmax=None):
         # Prüfen, ob tf_mag ein NumPy Array ist
@@ -331,6 +363,76 @@ class Plott_UEfkt_Modes(QMainWindow):
 
         for f in self.eigenfreqs:
             self.eigenfreq_list.addItem(f"{f:.2f} Hz")
+    
+    # ======================================================
+    # Zuordnung der Messungen zu Knoten extrahieren
+    # ======================================================   
+    @staticmethod
+    def extract_mode_from_measurement_map(
+        tf_imag,
+        freq_idx,
+        measurement_maps,
+        node_ids,
+        nodes,
+        normalize=False,
+    ):
+        """
+        Baut eine Modeform aus Imaginär-FFT über die Höhe auf
+        """
+
+        z_meas = []
+        u_meas = []
+        print("\n================ MODE DEBUG =================")
+        print(f"Frequenzindex: {freq_idx}")
+        # -------------------------
+        # Messwerte sammeln
+        # -------------------------
+        print("\nMesspunkte (z, u_imag):")
+        for measurement_map in measurement_maps:
+            for meas_idx, node_id, sign in measurement_map:
+                node_pos = np.where(node_ids == node_id)[0][0]
+                z = nodes["z"][node_pos]
+                u = sign * tf_imag[freq_idx, meas_idx]
+
+                z_meas.append(z)
+                u_meas.append(u)
+                print(
+                f"  Node {node_id:>3} | "
+                f"z = {z:6.2f} | "
+                f"TF[{meas_idx}] = {u:+.4e}"
+            )
+
+        z_meas = np.asarray(z_meas)
+        u_meas = np.asarray(u_meas)
+
+        # -------------------------
+        # Mode über Höhe aufbauen
+        # -------------------------
+        z_nodes = nodes["z"]
+        u_all = build_mode(z_nodes, z_meas, u_meas)
+
+        # -------------------------
+        # Normieren
+        # -------------------------
+        if normalize:
+            max_val = np.max(np.abs(u_all))
+            if max_val > 0:
+                u_all /= max_val
+
+        # -------------------------
+        # Knoten-Auslenkungen
+        # -------------------------
+        print("\nInterpolierte Auslenkungen (nur relevante z):")
+        for z0 in np.unique(z_meas):
+            idx = np.where(nodes["z"] == z0)[0]
+            for i in idx:
+                print(
+                    f"  Node {node_ids[i]:>3} | "
+                    f"z = {nodes['z'][i]:6.2f} | "
+                    f"u = {u_all[i]:+.4f}"
+                )
+
+        return u_all
 
 
     # ======================================================
@@ -338,42 +440,29 @@ class Plott_UEfkt_Modes(QMainWindow):
     # ======================================================
     def plot_selected_mode(self, mode_idx):
 
-        if self.nodes is None or "z" not in self.nodes:
-            self.show_info("Laden Sie das Geometry-File.")
-            return
-
-        if self.tf_imag is None:
-            self.show_info("Laden Sie das Imaginär-FFT-File.")
-            return
-
-        if not hasattr(self, "peak_indices"):
-            self.show_info("Eigenfrequenzen fehlen.")
-            return
-
-        if not hasattr(self, "hammer_node_ids"):
-            self.show_info("Zuordnung Hammer → Knoten fehlt.")
+        if self.nodes is None or self.tf_imag is None:
+            self.show_info("Geometry oder FFT fehlt.")
             return
 
         freq_idx = self.peak_indices[mode_idx]
 
-        #Peakwerte je Hammerposition
-        mode_values = self.tf_imag[freq_idx, :]  # Länge = Anzahl Messungen
+        direction = self.dir_combo.currentText()  # "X" oder "Y"
 
-        #  Verschiebungsvektor (alle Knoten)
-        u_all = np.zeros(len(self.node_ids))
+        # 👉 alle Kanten dieser Richtung verwenden
+        measurement_maps = list(MEASUREMENT_MAP[direction].values())
 
-        #Zuordnung Messung → Knoten
-        for k, node_id in enumerate(self.hammer_node_ids):
-            idx = np.where(self.node_ids == node_id)[0][0]
-            u_all[idx] = mode_values[k]
+        u_all = self.extract_mode_from_measurement_map(
+            tf_imag=self.tf_imag,
+            freq_idx=freq_idx,
+            measurement_maps=measurement_maps,
+            node_ids=self.node_ids,
+            nodes=self.nodes,
+            normalize=True,
+        )
 
-        #Normierung
-        if np.max(np.abs(u_all)) > 0:
-            u_all /= np.max(np.abs(u_all))
 
-        #Plot
         self.figure.clear()
-        ax = self.figure.subplots()
+        ax = self.figure.add_subplot(111)
 
         plot_mode(
             ax=ax,
@@ -383,56 +472,12 @@ class Plott_UEfkt_Modes(QMainWindow):
             plot_lines=[("b", u_all)],
             axis_a="x",
             axis_b="z",
-            disp_axis="x",
+            disp_axis=direction.lower(),  # "x" oder "y"
             scale=0.4,
         )
 
-        ax.set_title(f"Mode {mode_idx + 1}")
+        ax.set_title(f"Mode {mode_idx + 1} ({direction})")
         self.canvas.draw()
-
-
-    # def plot_selected_mode(self, mode_idx):
-    #     # Prüfen, ob Geometrie geladen ist
-    #     if self.nodes is None or "z" not in self.nodes or self.node_ids is None or self.edges is None:
-    #         self.show_info("Laden Sie das Geometry-File, um Modes zu plotten.")
-    #         return
-
-    #     if self.tf_imag is None:
-    #         self.show_info("Laden Sie das Imaginär-FFT-File.")
-    #         return
-
-    #     if not hasattr(self, "peak_indices"):
-    #         self.show_info("Die Eigenfrequenzen wurden noch nicht bestimmt.")
-    #         return
-
-    #     freq_idx = self.peak_indices[mode_idx]
-
-    #     # Imaginärteil aller Sensoren bei dieser Frequenz
-    #     u_meas = self.tf_imag[freq_idx, :]
-
-    #     z_nodes = self.nodes["z"]
-    #     z_meas = z_nodes[:len(u_meas)]
-
-    #     u_all = build_mode(z_nodes, z_meas, u_meas)
-
-    #     self.figure.clear()
-    #     ax = self.figure.subplots()
-    #     u_all_scaled = u_all / np.max(np.abs(u_all))  # Normierung auf 1
-    #     plot_mode(
-    #         ax=ax,
-    #         node_ids=self.node_ids,
-    #         nodes=self.nodes,
-    #         edges=self.edges,
-    #         plot_lines=[("b", u_all_scaled)],
-    #         axis_a="x",
-    #         axis_b="z",
-    #         disp_axis="x",
-    #         scale=0.4,
-    #     )
-
-    #     ax.set_title(f"Mode {mode_idx + 1}")
-    #     self.canvas.draw()
-
     # ======================================================
     # Eigenfrequenz aus Liste auswählen und Mode plotten
     # ======================================================
