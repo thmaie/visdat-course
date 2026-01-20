@@ -9,8 +9,8 @@ from scipy.signal import find_peaks
 def find_eigenfrequencies(
     frequency,
     tf,
-    height_ratio=0.2,
-    min_distance=5,
+    height_ratio=0.15,
+    min_distance=1,
 ):
     """
     Findet Eigenfrequenzen aus einer Übertragungsfunktion
@@ -36,33 +36,35 @@ def find_eigenfrequencies(
 # ======================================================
 def build_mode(z_nodes, z_meas, u_meas):
     """
-    Interpoliert Messwerte auf alle Knoten (Modeform)
+    VISUAL-Mode:
+    verbindet nur gemessene Punkte entlang z
     """
-    z_ext = np.r_[0.0, z_meas]
-    u_ext = np.r_[0.0, u_meas]
 
-    order = np.argsort(z_ext)
-    z_ext = z_ext[order]
-    u_ext = u_ext[order]
+    # Sortieren der MEsswerte nach der z-Koordinate des Geometriefiles über die Zuordnungsmatrix
+    order = np.argsort(z_meas)
+    z_meas = z_meas[order]
+    u_meas = u_meas[order]
 
-    z_ext, idx = np.unique(z_ext, return_index=True)
-    u_ext = u_ext[idx]
+    # Doppelte Höhen entfernen
+    z_meas, idx = np.unique(z_meas, return_index=True)
+    u_meas = u_meas[idx]
 
-    if len(z_ext) < 2:
-        # zu wenige Punkte → einfach konstante Auslenkung
-        u_all = np.zeros_like(z_nodes)
-        u_all[z_nodes == 0] = 0.0
-        if len(u_ext) > 0:
-            u_all += u_ext[0]
-        return u_all
+    # Zu wenige Punkte → nichts darstellen
+    if len(z_meas) < 2:
+        return np.zeros_like(z_nodes)
+    
+    # Fundament festhalten
+    if z_meas[0] > 0:
+        z_meas = np.insert(z_meas, 0, 0.0)
+        u_meas = np.insert(u_meas, 0, 0.0)
 
-    interp = PchipInterpolator(z_ext, u_ext, extrapolate=True)
+    interp = PchipInterpolator(z_meas, u_meas, extrapolate=True)
     u_all = interp(z_nodes)
 
-    # Einspannung
-    u_all[z_nodes == 0] = 0.0
-    return u_all
+    # außerhalb Messbereich (nur Sicherheit)
+    u_all[np.isnan(u_all)] = 0.0
 
+    return u_all
 
 # ======================================================
 # MODE PLOTTEN (UNIVERSELL)
