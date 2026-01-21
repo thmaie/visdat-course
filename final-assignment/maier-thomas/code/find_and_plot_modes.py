@@ -1,30 +1,23 @@
+#File welches funktinen zum Finden und Plotten der Eigenmoden beinhaltet
+#File soll als input in das Hauptprogramm verwendet werden
+
 import numpy as np
 from scipy.interpolate import PchipInterpolator
 from scipy.signal import find_peaks
 
-
 # ======================================================
-# EIGENFREQUENZEN FINDEN
+# Funktion zum Finden der Eigenfrequenzen
 # ======================================================
 def find_eigenfrequencies(
     frequency,
     tf,
-    height_ratio=0.15,
-    min_distance=1,
+    height_ratio=0.15,      #  Einstellparameter Peakhöhe für die Suche
+    min_distance=1,         #Einstellparameter für die Suche
 ):
-    """
-    Findet Eigenfrequenzen aus einer Übertragungsfunktion
-
-    Returns
-    -------
-    eigenfreqs : ndarray
-        Gefundene Eigenfrequenzen
-    peak_indices : ndarray
-        Indizes der Peaks
-    """
+    
     peaks, props = find_peaks(
-        np.abs(tf),
-        height=np.max(np.abs(tf)) * height_ratio,
+        np.abs(tf),                                 
+        height=np.max(np.abs(tf)) * height_ratio,  #Definieren der Höhe der peaks welche berücksichtigt werden sollen 
         distance=min_distance,
     )
 
@@ -32,15 +25,12 @@ def find_eigenfrequencies(
 
 
 # ======================================================
-# MODE AUFBAUEN
+# Funktion zum finden der Moden
 # ======================================================
 def build_mode(z_nodes, z_meas, u_meas):
-    """
-    VISUAL-Mode:
-    verbindet nur gemessene Punkte entlang z
-    """
 
-    # Sortieren der MEsswerte nach der z-Koordinate des Geometriefiles über die Zuordnungsmatrix
+
+    # Sortieren der Messwerte nach der z-Koordinate des Geometriefiles über die Zuordnungsmatrix bei chaotishcer Messreihenanordnung
     order = np.argsort(z_meas)
     z_meas = z_meas[order]
     u_meas = u_meas[order]
@@ -58,7 +48,7 @@ def build_mode(z_nodes, z_meas, u_meas):
         z_meas = np.insert(z_meas, 0, 0.0)
         u_meas = np.insert(u_meas, 0, 0.0)
 
-    interp = PchipInterpolator(z_meas, u_meas, extrapolate=True)
+    interp = PchipInterpolator(z_meas, u_meas, extrapolate=True)    
     u_all = interp(z_nodes)
 
     # außerhalb Messbereich (nur Sicherheit)
@@ -67,23 +57,19 @@ def build_mode(z_nodes, z_meas, u_meas):
     return u_all
 
 # ======================================================
-# MODE PLOTTEN (UNIVERSELL)
+# Universielle funktion zum Plotten von moden (qualitativ)
 # ======================================================
 def plot_mode(
     ax,
     node_ids,
-    nodes,          # dict: {"x":..., "y":..., "z":...}
+    nodes,          
     edges,
-    plot_lines,     # [(color, displacement_array)]
+    plot_lines,     
     axis_a="x",
     axis_b="z",
     disp_axis="x",
-    scale=0.4,
+    scale=0.4,          #Einstellparameter für die Ausprägung der Moden im Plot
 ):
-    """
-    Universeller Mode-Plotter
-    """
-
     ax.clear()
 
     A = nodes[axis_a]
