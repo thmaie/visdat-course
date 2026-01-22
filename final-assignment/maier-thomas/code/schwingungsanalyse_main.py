@@ -364,8 +364,9 @@ class Plott_UEfkt_Modes(QMainWindow):               # Hauptfensterklasse der App
         #print("\n================ MODE DEBUG =================")  #Debug-Ausgaben zur Überprüfung der Funktion bei Bedarf aktivieren
         #print(f"Frequenzindex: {freq_idx}")                       #Debug-Ausgaben zur Überprüfung der Funktion bei Bedarf aktivieren
 
+        
+        #print("\nMesspunkte (z, u_imag):")
         # Messwerte sammeln
-        print("\nMesspunkte (z, u_imag):")
         for measurement_map in measurement_maps:
             for meas_idx, node_id, sign in measurement_map:
                 node_pos = np.where(node_ids == node_id)[0][0]      #Finden der Position des Knotens im Knoten-Array

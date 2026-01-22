@@ -27,8 +27,19 @@ Visualization & Data Processing - Final Project
 ---
 
 ## Implementation Highlights
-- 
-
+- ![Menü](assets\screenshots\File_menu.png){width =50%}
+---
+## Implementation Highlights
+- ![Menü](assets\screenshots\Bild_menu.png){width =50%}
+---
+## Implementation Highlights
+- ![Menü](assets\screenshots\uefkt.png){width = 50%}
+---
+## Implementation Highlights
+- ![Menü](assets\screenshots\Eigenfreq.png){width =50%}
+---
+## Implementation Highlights
+- ![Menü](assets\screenshots\Moden.png){width =50%}
 ---
 
 ## Demo
