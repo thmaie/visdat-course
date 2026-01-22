@@ -16,7 +16,7 @@
 
 # IMPORT der benötigten Libraries
 import sys
-from matplotlib import container
+#from matplotlib import container
 import numpy as np
 import pandas as pd
 import h5py
@@ -240,7 +240,7 @@ class Plott_UEfkt_Modes(QMainWindow):               # Hauptfensterklasse der App
             return
 
         df = pd.read_csv(path, sep="\t", comment="#", decimal=",")
-        self.frequency = df["frequency"].astype(float).values*2.1
+        self.frequency = df["frequency"].astype(float).values
 
         kanalnamen = [c for c in df.columns if "UEBERTRAGUNGSFUNKTION" in c]    #Filtern der Spaltennamen für die Kanäle
         kanalnamen = sorted(kanalnamen, key=lambda s: int(s.split("_")[-1]))      #Sortieren der Kanalnamen nach der Kanalnummer
