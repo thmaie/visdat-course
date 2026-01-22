@@ -16,7 +16,6 @@
 
 # IMPORT der benötigten Libraries
 import sys
-#from matplotlib import container
 import numpy as np
 import pandas as pd
 import h5py
